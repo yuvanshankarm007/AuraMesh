@@ -81,141 +81,41 @@ export class FaceDetectionEngine {
 
   /**
    * Check if an RGB pixel falls within the human skin chrominance cluster
-   * Accommodates Fitzpatrick I-VI and indoor webcam lighting balances
+   * Rejects flat wall paint, wooden doors, and desaturated backgrounds
    */
   private isSkinPixel(r: number, g: number, b: number): boolean {
     const y = 0.299 * r + 0.587 * g + 0.114 * b;
     const cb = -0.168736 * r - 0.331264 * g + 0.5 * b + 128;
     const cr = 0.5 * r - 0.418688 * g - 0.081312 * b + 128;
 
-    // Model 1: Wide YCbCr skin chrominance cluster
-    const ycbcrPass =
-      y >= 20 &&
-      cb >= 65 && cb <= 145 &&
-      cr >= 120 && cr <= 185 &&
-      r >= g && (r >= b || Math.abs(r - b) < 16);
+    // Luminance bounds: exclude deep shadows and high glare
+    if (y < 35 || y > 245) return false;
 
-    // Model 2: RGB photometrics fallback for cool LED monitors/desaturated webcams
-    const rgbPass =
-      r > 40 && g > 30 && b > 20 &&
-      (r + g) > (2 * b) &&
-      r >= b &&
-      Math.abs(r - g) < 55;
+    // Human skin requires distinct red dominance over green and blue (due to dermal hemoglobin).
+    // Beige walls/cabinets have r ~= g (e.g. 210 vs 205). Skin has r - g >= 10.
+    if (r <= g || r <= b) return false;
+    if (r - g < 10) return false;
+    if (Math.max(r, g, b) - Math.min(r, g, b) < 15) return false;
 
-    return ycbcrPass || rgbPass;
+    // Dermatological YCbCr skin ellipse
+    return cb >= 77 && cb <= 135 && cr >= 130 && cr <= 175;
   }
 
   /**
-   * Detect Face, Facial Landmarks, and Extract Photometric Telemetry from an Element
+   * Build structured FaceDetectionResult with landmarks and photometric metrics
    */
-  public async detectFace(
-    source: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement
-  ): Promise<FaceDetectionResult> {
-    if (!this.offscreenCtx || !this.offscreenCanvas) {
-      return this.createFallbackResult(true);
-    }
-
-    const sw = this.offscreenCanvas.width;
-    const sh = this.offscreenCanvas.height;
-
-    // Draw downsampled frame to offscreen canvas
-    this.offscreenCtx.drawImage(source, 0, 0, sw, sh);
-    const imgData = this.offscreenCtx.getImageData(0, 0, sw, sh);
-    const data = imgData.data;
-
-    let skinCount = 0;
-    let sumX = 0;
-    let sumY = 0;
-    let sumSqX = 0;
-    let sumSqY = 0;
-
-    let sumR = 0;
-    let sumG = 0;
-    let sumB = 0;
-    let sumLux = 0;
-
-    // Pixel scan for human skin clusters
-    for (let y = 0; y < sh; y++) {
-      for (let x = 0; x < sw; x++) {
-        const idx = (y * sw + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-
-        if (this.isSkinPixel(r, g, b)) {
-          skinCount++;
-          sumX += x;
-          sumY += y;
-          sumSqX += x * x;
-          sumSqY += y * y;
-
-          sumR += r;
-          sumG += g;
-          sumB += b;
-        }
-
-        sumLux += 0.299 * r + 0.587 * g + 0.114 * b;
-      }
-    }
-
-    const totalPixels = sw * sh;
-    const avgLux = Math.round(sumLux / totalPixels);
-
-    let boxX = 0.24;
-    let boxY = 0.14;
-    let boxW = 0.52;
-    let boxH = 0.68;
-    let confidence = 0.92;
-
-    // Statistical Center-Weighted Gaussian Clustering for Face Tracking
-    if (skinCount >= 40) {
-      const meanX = sumX / skinCount;
-      const meanY = sumY / skinCount;
-      const varX = Math.max(16, (sumSqX / skinCount) - (meanX * meanX));
-      const varY = Math.max(25, (sumSqY / skinCount) - (meanY * meanY));
-      const stdX = Math.sqrt(varX);
-      const stdY = Math.sqrt(varY);
-
-      let targetW = Math.max(0.36, Math.min(0.62, (stdX * 3.4) / sw));
-      let targetH = Math.max(0.46, Math.min(0.74, (stdY * 3.6) / sh));
-
-      // Strictly lock to human portrait anatomical ratio (1.22 - 1.48)
-      if (targetH / targetW < 1.22) targetH = targetW * 1.30;
-      if (targetH / targetW > 1.48) targetW = targetH / 1.34;
-
-      let targetX = Math.max(0.06, Math.min(0.94 - targetW, (meanX / sw) - targetW * 0.5));
-      let targetY = Math.max(0.06, Math.min(0.94 - targetH, (meanY / sh) - targetH * 0.46));
-
-      // Temporal Exponential Moving Average (Anti-jitter filter)
-      if (this.prevBox) {
-        boxX = this.prevBox.x * 0.70 + targetX * 0.30;
-        boxY = this.prevBox.y * 0.70 + targetY * 0.30;
-        boxW = this.prevBox.w * 0.70 + targetW * 0.30;
-        boxH = this.prevBox.h * 0.70 + targetH * 0.30;
-      } else {
-        boxX = targetX;
-        boxY = targetY;
-        boxW = targetW;
-        boxH = targetH;
-      }
-      this.prevBox = { x: boxX, y: boxY, w: boxW, h: boxH };
-      confidence = 0.95;
-    } else {
-      // Default portrait centered bounding box for selfies
-      confidence = 0.88;
-      // Sample center pixels for mean color
-      for (let y = Math.round(sh * 0.3); y < Math.round(sh * 0.7); y++) {
-        for (let x = Math.round(sw * 0.3); x < Math.round(sw * 0.7); x++) {
-          const idx = (y * sw + x) * 4;
-          sumR += data[idx];
-          sumG += data[idx + 1];
-          sumB += data[idx + 2];
-          skinCount++;
-        }
-      }
-    }
-
-    // Centered Landmark Formulations
+  private buildResult(
+    detected: boolean,
+    confidence: number,
+    boxX: number,
+    boxY: number,
+    boxW: number,
+    boxH: number,
+    data: Uint8ClampedArray,
+    sw: number,
+    sh: number,
+    avgLux: number
+  ): FaceDetectionResult {
     const landmarks: FaceLandmarks = {
       forehead: {
         x: Math.round((boxX + boxW * 0.5) * 100),
@@ -257,17 +157,38 @@ export class FaceDetectionEngine {
       }
     };
 
-    // Calculate Photometric Skin Colorimetry from sampled skin pixels
-    const meanR = Math.max(10, Math.min(255, Math.round(sumR / (skinCount || 1))));
-    const meanG = Math.max(10, Math.min(255, Math.round(sumG / (skinCount || 1))));
-    const meanB = Math.max(10, Math.min(255, Math.round(sumB / (skinCount || 1))));
+    // Sample cheek patch for accurate colorimetry
+    const cx = Math.floor((boxX + boxW * 0.5) * sw);
+    const cy = Math.floor((boxY + boxH * 0.52) * sh);
+    let sR = 0;
+    let sG = 0;
+    let sB = 0;
+    let sCount = 0;
+
+    for (let dy = -6; dy <= 6; dy++) {
+      for (let dx = -6; dx <= 6; dx++) {
+        const sx = cx + dx;
+        const sy = cy + dy;
+        if (sx >= 0 && sx < sw && sy >= 0 && sy < sh) {
+          const idx = (sy * sw + sx) * 4;
+          sR += data[idx];
+          sG += data[idx + 1];
+          sB += data[idx + 2];
+          sCount++;
+        }
+      }
+    }
+
+    const meanR = Math.max(10, Math.min(255, Math.round(sR / (sCount || 1))));
+    const meanG = Math.max(10, Math.min(255, Math.round(sG / (sCount || 1))));
+    const meanB = Math.max(10, Math.min(255, Math.round(sB / (sCount || 1))));
 
     const lab = FaceDetectionEngine.rgbToLab(meanR, meanG, meanB);
     const { ita, fitzpatrick } = FaceDetectionEngine.calculateITA(lab.L, lab.b);
     const undertone = FaceDetectionEngine.determineUndertone(lab.a, lab.b);
 
     return {
-      detected: true,
+      detected,
       confidence: Number(confidence.toFixed(3)),
       boundingBox: {
         x: Math.round(boxX * 100),
@@ -285,6 +206,172 @@ export class FaceDetectionEngine {
         contrastScore: Math.round(confidence * 100)
       }
     };
+  }
+
+  /**
+   * Detect Face, Facial Landmarks, and Extract Photometric Telemetry from an Element
+   */
+  public async detectFace(
+    source: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement
+  ): Promise<FaceDetectionResult> {
+    if (!this.offscreenCtx || !this.offscreenCanvas) {
+      return this.createFallbackResult(false);
+    }
+
+    const sw = this.offscreenCanvas.width;
+    const sh = this.offscreenCanvas.height;
+
+    // Draw downsampled frame to offscreen canvas
+    this.offscreenCtx.drawImage(source, 0, 0, sw, sh);
+    const imgData = this.offscreenCtx.getImageData(0, 0, sw, sh);
+    const data = imgData.data;
+
+    let sumLux = 0;
+    const totalPixels = sw * sh;
+
+    for (let i = 0; i < totalPixels; i++) {
+      const idx = i * 4;
+      sumLux += 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+    }
+    const avgLux = Math.round(sumLux / totalPixels);
+
+    // 1. Hardware/Browser Native FaceDetector (Chrome, Brave, Edge, Android)
+    if (typeof window !== 'undefined' && 'FaceDetector' in window) {
+      try {
+        const detector = new (window as any).FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+        const detectedFaces = await detector.detect(source);
+        if (detectedFaces && detectedFaces.length > 0) {
+          const rawFace = detectedFaces[0];
+          const bb = rawFace.boundingBox;
+          const srcWidth = (source as any).videoWidth || (source as any).naturalWidth || (source as any).width || sw;
+          const srcHeight = (source as any).videoHeight || (source as any).naturalHeight || (source as any).height || sh;
+
+          const rawX = Math.max(0.02, Math.min(0.9, bb.x / srcWidth));
+          const rawY = Math.max(0.02, Math.min(0.9, bb.y / srcHeight));
+          const rawW = Math.max(0.14, Math.min(0.94, bb.width / srcWidth));
+          const rawH = Math.max(0.16, Math.min(0.94, bb.height / srcHeight));
+
+          let boxX = rawX;
+          let boxY = rawY;
+          let boxW = rawW;
+          let boxH = rawH;
+
+          if (this.prevBox) {
+            boxX = this.prevBox.x * 0.65 + rawX * 0.35;
+            boxY = this.prevBox.y * 0.65 + rawY * 0.35;
+            boxW = this.prevBox.w * 0.65 + rawW * 0.35;
+            boxH = this.prevBox.h * 0.65 + rawH * 0.35;
+          }
+          this.prevBox = { x: boxX, y: boxY, w: boxW, h: boxH };
+
+          return this.buildResult(true, 0.98, boxX, boxY, boxW, boxH, data, sw, sh, avgLux);
+        }
+      } catch {
+        // Fall back to computer vision clustering
+      }
+    }
+
+    // 2. High-Precision Computer Vision Cluster Analysis
+    let skinCount = 0;
+    let sumX = 0;
+    let sumY = 0;
+    let sumSqX = 0;
+    let sumSqY = 0;
+
+    for (let y = 0; y < sh; y++) {
+      for (let x = 0; x < sw; x++) {
+        const idx = (y * sw + x) * 4;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+
+        if (this.isSkinPixel(r, g, b)) {
+          skinCount++;
+          sumX += x;
+          sumY += y;
+          sumSqX += x * x;
+          sumSqY += y * y;
+        }
+      }
+    }
+
+    // Reject empty rooms (< 100 skin pixels) or camera completely blocked by uniform wall (> 17500 pixels)
+    if (skinCount < 100 || skinCount > 17500) {
+      this.prevBox = null;
+      return this.createFallbackResult(false, avgLux);
+    }
+
+    const meanX = sumX / skinCount;
+    const meanY = sumY / skinCount;
+    const varX = Math.max(16, (sumSqX / skinCount) - (meanX * meanX));
+    const varY = Math.max(25, (sumSqY / skinCount) - (meanY * meanY));
+    const stdX = Math.sqrt(varX);
+    const stdY = Math.sqrt(varY);
+
+    if (stdX < 8 || stdY < 10) {
+      this.prevBox = null;
+      return this.createFallbackResult(false, avgLux);
+    }
+
+    let targetW = Math.max(0.25, Math.min(0.68, (stdX * 3.2) / sw));
+    let targetH = Math.max(0.32, Math.min(0.82, (stdY * 3.4) / sh));
+
+    // Strictly lock to human portrait anatomical ratio (1.15 - 1.55)
+    if (targetH / targetW < 1.15) targetH = targetW * 1.25;
+    if (targetH / targetW > 1.55) targetW = targetH / 1.35;
+
+    let targetX = Math.max(0.04, Math.min(0.96 - targetW, (meanX / sw) - targetW * 0.5));
+    let targetY = Math.max(0.04, Math.min(0.96 - targetH, (meanY / sh) - targetH * 0.46));
+
+    // 3. Contrast & Texture Validation (Rejects flat walls and wooden doors)
+    const px0 = Math.floor(targetX * sw);
+    const py0 = Math.floor(targetY * sh);
+    const pw = Math.floor(targetW * sw);
+    const ph = Math.floor(targetH * sh);
+
+    let boxLumSum = 0;
+    let boxLumSqSum = 0;
+    let boxSamples = 0;
+
+    for (let py = py0; py < py0 + ph; py += 2) {
+      for (let px = px0; px < px0 + pw; px += 2) {
+        if (px >= 0 && px < sw && py >= 0 && py < sh) {
+          const idx = (py * sw + px) * 4;
+          const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+          boxLumSum += lum;
+          boxLumSqSum += lum * lum;
+          boxSamples++;
+        }
+      }
+    }
+
+    const meanBoxLum = boxLumSum / (boxSamples || 1);
+    const varBoxLum = Math.max(0, (boxLumSqSum / (boxSamples || 1)) - (meanBoxLum * meanBoxLum));
+    const stdBoxLum = Math.sqrt(varBoxLum);
+
+    // Wall/Cupboard Rejection: A flat painted wall or wooden cupboard door has stdBoxLum < 8.
+    // Real human faces have eyes, eyebrows, hair boundary, and nostrils with stdBoxLum >= 8.5.
+    if (stdBoxLum < 8.5) {
+      this.prevBox = null;
+      return this.createFallbackResult(false, avgLux);
+    }
+
+    // Temporal Exponential Moving Average (Anti-jitter filter)
+    let boxX = targetX;
+    let boxY = targetY;
+    let boxW = targetW;
+    let boxH = targetH;
+
+    if (this.prevBox) {
+      boxX = this.prevBox.x * 0.65 + targetX * 0.35;
+      boxY = this.prevBox.y * 0.65 + targetY * 0.35;
+      boxW = this.prevBox.w * 0.65 + targetW * 0.35;
+      boxH = this.prevBox.h * 0.65 + targetH * 0.35;
+    }
+    this.prevBox = { x: boxX, y: boxY, w: boxW, h: boxH };
+
+    const confidence = Math.min(0.96, Math.max(0.72, 0.70 + (stdBoxLum / 80)));
+    return this.buildResult(true, confidence, boxX, boxY, boxW, boxH, data, sw, sh, avgLux);
   }
 
   /**

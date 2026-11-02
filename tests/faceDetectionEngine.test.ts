@@ -74,4 +74,21 @@ describe('FaceDetectionEngine — Photometric & Landmark Analysis', () => {
     expect(scores.overallScore).toBeGreaterThan(0);
     expect(scores.overallScore).toBeLessThanOrEqual(100);
   });
+
+  it('rejects flat background wall / cupboard surfaces without false positives', () => {
+    const engine = FaceDetectionEngine.getInstance();
+    // Verify that createFallbackResult returns detected: false with confidence: 0
+    const fallback = (engine as any).createFallbackResult(false, 80);
+    expect(fallback.detected).toBe(false);
+    expect(fallback.confidence).toBe(0);
+    expect(fallback.metrics.brightnessLux).toBe(80);
+
+    // Verify isSkinPixel rejects beige painted wall / furniture wood colors (where r ~= g)
+    // Wall paint: r=210, g=205, b=165 (r-g = 5 < 10) -> false
+    expect((engine as any).isSkinPixel(210, 205, 165)).toBe(false);
+    // Dark shadow wall: y < 35 -> false
+    expect((engine as any).isSkinPixel(25, 20, 15)).toBe(false);
+    // Real human skin: r=215, g=165, b=130 (r-g = 50 >= 10, cb=102, cr=156) -> true
+    expect((engine as any).isSkinPixel(215, 165, 130)).toBe(true);
+  });
 });

@@ -234,8 +234,8 @@ function drawStarSparkle(ctx: CanvasRenderingContext2D, x: number, y: number, r:
   ctx.restore();
 }
 
-// Draw realistic fluttery eyelashes and cat-eye winged liner
-function drawSnapchatEyelashes(
+// Soft photographic eye enhancement & iris ring-light catchlights (Natural, professional aesthetic)
+function drawSnapchatEyeEnhancement(
   ctx: CanvasRenderingContext2D,
   eyeX: number,
   eyeY: number,
@@ -246,42 +246,38 @@ function drawSnapchatEyelashes(
   ctx.save();
   const dir = isLeft ? -1 : 1;
 
-  // 1. Sleek upper lash line
-  ctx.strokeStyle = '#18181b';
-  ctx.lineWidth = 2.4;
+  // 1. Soft smoky tightline along upper eyelid (diffused, natural soft-light/multiply blending)
+  ctx.save();
+  ctx.globalCompositeOperation = 'multiply';
+  const grad = ctx.createLinearGradient(eyeX - eyeW * 0.45, eyeY, eyeX + eyeW * 0.45, eyeY);
+  grad.addColorStop(0, 'rgba(45, 30, 35, 0.20)');
+  grad.addColorStop(0.5, 'rgba(30, 20, 25, 0.50)');
+  grad.addColorStop(1, 'rgba(45, 30, 35, 0.20)');
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 1.6;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(eyeX - eyeW * 0.45, eyeY);
-  ctx.quadraticCurveTo(eyeX, eyeY - eyeH * 0.85, eyeX + eyeW * 0.45, eyeY);
-
-  // Winged cat-eye flick extending outward
-  const wingX = eyeX + dir * eyeW * 0.76;
-  const wingY = eyeY - eyeH * 0.92;
-  ctx.quadraticCurveTo(eyeX + dir * eyeW * 0.52, eyeY - eyeH * 0.55, wingX, wingY);
+  ctx.moveTo(eyeX - eyeW * 0.40, eyeY);
+  ctx.quadraticCurveTo(eyeX, eyeY - eyeH * 0.40, eyeX + eyeW * 0.40, eyeY);
+  // Soft gentle wing lift (feathered, non-harsh)
+  ctx.quadraticCurveTo(eyeX + dir * eyeW * 0.48, eyeY - eyeH * 0.32, eyeX + dir * eyeW * 0.56, eyeY - eyeH * 0.38);
   ctx.stroke();
+  ctx.restore();
 
-  // 2. Fluttery curved individual lash strokes
-  ctx.lineWidth = 1.3;
-  ctx.strokeStyle = '#27272a';
-  for (let i = 0; i < 4; i++) {
-    const t = 0.22 + i * 0.20;
-    const lx = eyeX - eyeW * 0.35 + eyeW * 0.7 * t;
-    const ly = eyeY - eyeH * 0.55 * Math.sin(t * Math.PI);
-    const lashTipX = lx + dir * (3.5 + i * 2.2);
-    const lashTipY = ly - (6.5 + i * 2.4);
-    ctx.beginPath();
-    ctx.moveTo(lx, ly);
-    ctx.quadraticCurveTo(lx + dir * 2, ly - 4.5, lashTipX, lashTipY);
-    ctx.stroke();
-  }
-
-  // 3. Bright sparkling iris catchlight
+  // 2. Sparkling iris ring-light catchlight (signature studio/Snapchat lively catchlight)
   ctx.fillStyle = '#ffffff';
   ctx.shadowColor = '#ffffff';
-  ctx.shadowBlur = 4;
+  ctx.shadowBlur = 3;
   ctx.beginPath();
-  ctx.arc(eyeX + 1.8, eyeY - 2, 2.2, 0, Math.PI * 2);
+  ctx.arc(eyeX + (isLeft ? 1.5 : -1.5), eyeY - 2.2, 1.8, 0, Math.PI * 2);
   ctx.fill();
+
+  // 3. Subtle lower lash soft light brighten to reduce fatigue
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.30)';
+  ctx.beginPath();
+  ctx.arc(eyeX, eyeY + eyeH * 0.28, 1.2, 0, Math.PI * 2);
+  ctx.fill();
+
   ctx.restore();
 }
 
@@ -610,6 +606,40 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
       }
       if (!result) return;
 
+      // When no face is detected with high confidence (e.g. wall, room background, or person out of view):
+      if (!result.detected || result.confidence < 0.65) {
+        // Draw clean camera view with subtle FaceID alignment guide oval
+        ctx.save();
+        ctx.strokeStyle = 'rgba(244, 114, 182, 0.40)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 8]);
+        ctx.beginPath();
+        ctx.ellipse(cw * 0.5, ch * 0.46, cw * 0.28, ch * 0.38, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Sleek alignment pill badge
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        const bannerW = 230;
+        const bannerH = 32;
+        const bx = (cw - bannerW) * 0.5;
+        const by = ch * 0.85;
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bannerW, bannerH, 16);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(244, 114, 182, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#fbcfe8';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Center face in camera to try on AR', cw * 0.5, by + 20);
+        ctx.restore();
+
+        animFrameRef.current = requestAnimationFrame(renderMotionFrame);
+        return;
+      }
+
       const lmk = result.landmarks;
       const tick = demoMotionTick.current;
 
@@ -746,12 +776,12 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
             }
             ctx.restore();
 
-            // Lashes & Eyeliner
+            // Natural Eye Enhancement & Iris Ring-Light Catchlights (No cartoon lashes)
             if (activeLens.hasLashes || activeLens.hasEyeliner) {
               const eyeW = Math.max(22, bw * 0.17);
               const eyeH = Math.max(10, bh * 0.09);
-              drawSnapchatEyelashes(ctx, lex, ley, eyeW, eyeH, true);
-              drawSnapchatEyelashes(ctx, rex, rey, eyeW, eyeH, false);
+              drawSnapchatEyeEnhancement(ctx, lex, ley, eyeW, eyeH, true);
+              drawSnapchatEyeEnhancement(ctx, rex, rey, eyeW, eyeH, false);
             }
 
             // Cheek Star Sparkles
@@ -1343,60 +1373,20 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
               style={{ filter: getLightingFilter() }}
             />
 
-            {/* SNAPCHAT CIRCULAR SHUTTER BUTTON */}
-            <div className="absolute bottom-5 inset-x-0 flex items-center justify-center z-30 pointer-events-none">
-              <button
-                onClick={handleSnapMotionPicture}
-                className="pointer-events-auto relative w-16 h-16 rounded-full border-4 border-white bg-gradient-to-tr from-pink-500 via-rose-500 to-amber-400 hover:scale-110 active:scale-95 shadow-2xl shadow-pink-500/50 flex items-center justify-center transition-all group ring-4 ring-white/30"
-                title="Take Picture with Active Lens"
-              >
-                <div className="w-12 h-12 rounded-full border-2 border-white/80 flex items-center justify-center bg-black/20 backdrop-blur-xs">
-                  <Camera className="w-6 h-6 text-white group-hover:rotate-12 transition-transform drop-shadow" />
-                </div>
-              </button>
-            </div>
-
-            {/* Prompt to Start Camera if webcam mode selected but not active */}
-            {activeMode === 'motion_webcam' && !isWebcamActive && (
-              <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-6 text-center space-y-3">
-                <Video className="w-10 h-10 text-pink-400 animate-pulse" />
-                <div>
-                  <h4 className="text-sm font-bold text-slate-100">Ready for Live AR Try-On</h4>
-                  <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                    Turn on your camera to experience real-time airbrushed skin, clinical heatmaps, and 30-day recovery forecasts.
-                  </p>
-                </div>
-                <button
-                  onClick={startLiveCamera}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-bold text-xs shadow-lg shadow-pink-500/25 flex items-center gap-2"
-                >
-                  <Camera className="w-4 h-4" />
-                  <span>Start Live AR Camera</span>
-                </button>
-              </div>
-            )}
-
-            {/* Drag Range Slider Overlay (ONLY in split_compare mode) */}
-            {viewMode === 'split_compare' && (
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={sliderPos}
-                onChange={(e) => setSliderPos(Number(e.target.value))}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-20"
-              />
-            )}
-
             {/* Corner Badges */}
             <div className="absolute top-3 left-3 flex items-center space-x-2 z-10 pointer-events-none">
               <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-950/80 px-2 py-0.5 rounded text-slate-300 border border-slate-800">
                 {activeMode === 'motion_webcam' ? 'Live Camera' : activeMode === 'demo_motion' ? 'Motion Feed' : 'Still'}
               </span>
-              {liveFace?.detected && (
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950/80 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+              {liveFace?.detected ? (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950/80 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shadow-sm">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                   Locked ({Math.round(liveFace.confidence * 100)}%)
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950/80 text-amber-300 border border-amber-500/30 flex items-center gap-1 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  Align Face
                 </span>
               )}
             </div>
@@ -1418,6 +1408,29 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
                   Day {chronoSkinDay} Forecast
                 </>
               )}
+            </span>
+          </div>
+
+          {/* DOCKED AR ACTION & SNAP BAR (Non-obstructive placement) */}
+          <div className="flex items-center justify-between bg-slate-950/90 border border-slate-800 rounded-xl px-4 py-2.5 shadow-lg">
+            <div className="flex items-center space-x-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${liveFace?.detected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              <span className="text-xs font-semibold text-slate-300">
+                {liveFace?.detected ? `Face Locked (${Math.round((liveFace.confidence || 0.9) * 100)}%)` : 'Looking for Face...'}
+              </span>
+            </div>
+
+            <button
+              onClick={handleSnapMotionPicture}
+              className="px-5 py-2 rounded-xl bg-gradient-to-r from-pink-500 via-rose-500 to-amber-400 hover:from-pink-600 hover:to-rose-600 active:scale-95 text-white font-bold text-xs shadow-md shadow-pink-500/30 flex items-center gap-2 transition-all cursor-pointer ring-1 ring-white/20"
+              title="Capture Motion Snapshot with Active AR Lens"
+            >
+              <Camera className="w-4 h-4 text-white" />
+              <span>Capture Snapshot</span>
+            </button>
+
+            <span className="text-[11px] font-mono text-slate-400">
+              {snappedPhotos.length > 0 ? `${snappedPhotos.length} snapped` : 'Live AR'}
             </span>
           </div>
 
