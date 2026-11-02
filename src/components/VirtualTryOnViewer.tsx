@@ -51,6 +51,21 @@ const FOUNDATION_SWATCHES = [
   { id: 'fd_rich_400', name: 'Rich 400 Espresso', hex: '#58311d' }
 ];
 
+function hexToRgba(hex: string, alpha: number): string {
+  const cleanHex = hex.replace('#', '');
+  if (cleanHex.length === 3) {
+    const r = parseInt(cleanHex[0] + cleanHex[0], 16);
+    const g = parseInt(cleanHex[1] + cleanHex[1], 16);
+    const b = parseInt(cleanHex[2] + cleanHex[2], 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  const num = parseInt(cleanHex, 16);
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
   aesthetic,
   avatarUrl,
@@ -85,9 +100,23 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
   const motionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
+  const stillImgRef = useRef<HTMLImageElement | null>(null);
+  const cachedFaceRef = useRef<FaceDetectionResult | null>(faceDetection || null);
+  const frameTickRef = useRef(0);
 
   // Demo motion simulation tick
   const demoMotionTick = useRef(0);
+
+  // Preload still avatar image for canvas rendering
+  useEffect(() => {
+    if (!avatarUrl) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      stillImgRef.current = img;
+    };
+    img.src = avatarUrl;
+  }, [avatarUrl]);
 
   // Synthesize camera shutter click sound with Web Audio API
   const playShutterSound = useCallback(() => {
@@ -207,8 +236,15 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         canvas.height = ch;
       }
 
-      // 1. RENDER BASE SOURCE (Live Webcam vs Demo Motion Simulation)
-      if (activeMode === 'motion_webcam' && videoRef.current && isWebcamActive) {
+      // 1. RENDER BASE SOURCE (Live Webcam vs Demo Motion Simulation vs Still Photo)
+      if (activeMode === 'still_photo') {
+        if (stillImgRef.current && stillImgRef.current.complete) {
+          ctx.drawImage(stillImgRef.current, 0, 0, cw, ch);
+        } else {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(0, 0, cw, ch);
+        }
+      } else if (activeMode === 'motion_webcam' && videoRef.current && isWebcamActive) {
         const video = videoRef.current;
         if (video.readyState >= 2) {
           // Mirrored selfie view
@@ -286,11 +322,17 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         ctx.fill();
       }
 
-      // 2. RUN REAL-TIME COMPUTER VISION ON CURRENT CANVAS
-      const result = await engine.detectFace(canvas);
-      if (isSubscribed) {
-        setLiveFace(result);
+      // 2. RUN REAL-TIME COMPUTER VISION (Throttled every 5 frames for buttery smooth 60 FPS)
+      frameTickRef.current += 1;
+      let result = cachedFaceRef.current;
+      if (frameTickRef.current % 5 === 0 || !result) {
+        result = await engine.detectFace(canvas);
+        cachedFaceRef.current = result;
+        if (isSubscribed) {
+          setLiveFace(result);
+        }
       }
+      if (!result) return;
 
       const lmk = result.landmarks;
       const splitX = (sliderPos / 100) * cw;
@@ -303,52 +345,103 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         ctx.rect(splitX, 0, cw - splitX, ch);
         ctx.clip();
 
-        // Skincare Glow Boost
+        // Accurate Facial Geometry
+        const bx = (result.boundingBox.x / 100) * cw;
+        const by = (result.boundingBox.y / 100) * ch;
+        const bw = (result.boundingBox.width / 100) * cw;
+        const bh = (result.boundingBox.height / 100) * ch;
+        const fcx = bx + bw * 0.5;
+        const fcy = by + bh * 0.52;
+        const frx = bw * 0.44;
+        const fry = bh * 0.52;
+
+        // Skincare Glow Boost (Subtle inner facial luminescence)
         if (layers.skincareGlow) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-          ctx.fillRect(0, 0, cw, ch);
+          const glowGrad = ctx.createRadialGradient(fcx, fcy, 10, fcx, fcy, Math.max(frx, fry));
+          glowGrad.addColorStop(0, 'rgba(255, 255, 255, 0.14)');
+          glowGrad.addColorStop(0.7, 'rgba(255, 255, 255, 0.05)');
+          glowGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+          ctx.fillStyle = glowGrad;
+          ctx.beginPath();
+          ctx.ellipse(fcx, fcy, frx, fry, 0, 0, Math.PI * 2);
+          ctx.fill();
         }
 
         if (layers.cosmeticMakeup) {
-          // Foundation Tone Tint Wash
-          ctx.globalCompositeOperation = 'color';
-          ctx.fillStyle = selectedFoundation;
-          ctx.fillRect(0, 0, cw, ch);
-          ctx.globalCompositeOperation = 'source-over';
+          // 1. Natural Feathered Foundation Tone Wash (Soft-light blend on face oval ONLY)
+          ctx.save();
+          ctx.globalCompositeOperation = 'soft-light';
+          const foundGrad = ctx.createRadialGradient(fcx, fcy, 10, fcx, fcy, Math.max(frx, fry));
+          foundGrad.addColorStop(0, hexToRgba(selectedFoundation, 0.55));
+          foundGrad.addColorStop(0.7, hexToRgba(selectedFoundation, 0.35));
+          foundGrad.addColorStop(1, hexToRgba(selectedFoundation, 0));
+          ctx.fillStyle = foundGrad;
+          ctx.beginPath();
+          ctx.ellipse(fcx, fcy, frx, fry, 0, 0, Math.PI * 2);
+          ctx.fill();
 
-          // AR Cheek Blush (Left & Right)
+          // Subtle undertone tinting via 'color' blend mode inside face oval
+          ctx.globalCompositeOperation = 'color';
+          ctx.fillStyle = hexToRgba(selectedFoundation, 0.20);
+          ctx.beginPath();
+          ctx.ellipse(fcx, fcy, frx * 0.9, fry * 0.9, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          // 2. AR Cheek Blush (Left & Right cheeks with soft radial blend)
           const blX1 = (lmk.leftCheek.x / 100) * cw;
           const blY1 = (lmk.leftCheek.y / 100) * ch;
           const blX2 = (lmk.rightCheek.x / 100) * cw;
           const blY2 = (lmk.rightCheek.y / 100) * ch;
-
-          const blushGrad1 = ctx.createRadialGradient(blX1, blY1, 4, blX1, blY1, 42);
-          blushGrad1.addColorStop(0, 'rgba(236, 72, 153, 0.38)');
-          blushGrad1.addColorStop(1, 'rgba(236, 72, 153, 0)');
-          ctx.fillStyle = blushGrad1;
-          ctx.beginPath();
-          ctx.arc(blX1, blY1, 42, 0, Math.PI * 2);
-          ctx.fill();
-
-          const blushGrad2 = ctx.createRadialGradient(blX2, blY2, 4, blX2, blY2, 42);
-          blushGrad2.addColorStop(0, 'rgba(236, 72, 153, 0.38)');
-          blushGrad2.addColorStop(1, 'rgba(236, 72, 153, 0)');
-          ctx.fillStyle = blushGrad2;
-          ctx.beginPath();
-          ctx.arc(blX2, blY2, 42, 0, Math.PI * 2);
-          ctx.fill();
-
-          // AR Lip Tint Over Detected Moving Lips
-          const mx = (lmk.mouthCenter.x / 100) * cw;
-          const my = (lmk.mouthCenter.y / 100) * ch;
-          const mw = Math.max(26, (lmk.mouthBounds.width / 100) * cw);
-          const mh = Math.max(12, (lmk.mouthBounds.height / 100) * ch);
+          const blushRadius = Math.max(22, bw * 0.15);
 
           ctx.save();
-          ctx.fillStyle = selectedLip;
-          ctx.globalAlpha = 0.55;
+          ctx.globalCompositeOperation = 'soft-light';
+          const blushGrad1 = ctx.createRadialGradient(blX1, blY1, 2, blX1, blY1, blushRadius);
+          blushGrad1.addColorStop(0, 'rgba(244, 114, 182, 0.45)');
+          blushGrad1.addColorStop(0.6, 'rgba(244, 114, 182, 0.22)');
+          blushGrad1.addColorStop(1, 'rgba(244, 114, 182, 0)');
+          ctx.fillStyle = blushGrad1;
           ctx.beginPath();
-          ctx.ellipse(mx, my, mw * 0.55, mh * 0.6, 0, 0, Math.PI * 2);
+          ctx.arc(blX1, blY1, blushRadius, 0, Math.PI * 2);
+          ctx.fill();
+
+          const blushGrad2 = ctx.createRadialGradient(blX2, blY2, 2, blX2, blY2, blushRadius);
+          blushGrad2.addColorStop(0, 'rgba(244, 114, 182, 0.45)');
+          blushGrad2.addColorStop(0.6, 'rgba(244, 114, 182, 0.22)');
+          blushGrad2.addColorStop(1, 'rgba(244, 114, 182, 0)');
+          ctx.fillStyle = blushGrad2;
+          ctx.beginPath();
+          ctx.arc(blX2, blY2, blushRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          // 3. Natural Feathered Lipstick (Multiply blend for rich pigment + Screen highlight for gloss)
+          const mx = (lmk.mouthCenter.x / 100) * cw;
+          const my = (lmk.mouthCenter.y / 100) * ch;
+          const mw = Math.max(24, (lmk.mouthBounds.width / 100) * cw);
+          const mh = Math.max(10, (lmk.mouthBounds.height / 100) * ch);
+
+          ctx.save();
+          // Base pigment with multiply blend
+          ctx.globalCompositeOperation = 'multiply';
+          const lipGrad = ctx.createRadialGradient(mx, my, 2, mx, my, mw * 0.55);
+          lipGrad.addColorStop(0, hexToRgba(selectedLip, 0.78));
+          lipGrad.addColorStop(0.7, hexToRgba(selectedLip, 0.52));
+          lipGrad.addColorStop(1, hexToRgba(selectedLip, 0.15));
+          ctx.fillStyle = lipGrad;
+          ctx.beginPath();
+          ctx.ellipse(mx, my, mw * 0.52, mh * 0.58, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Realistic lip gloss center specular sheen
+          ctx.globalCompositeOperation = 'screen';
+          const glossGrad = ctx.createRadialGradient(mx, my + mh * 0.1, 1, mx, my + mh * 0.1, mw * 0.35);
+          glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.32)');
+          glossGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+          ctx.fillStyle = glossGrad;
+          ctx.beginPath();
+          ctx.ellipse(mx, my + mh * 0.12, mw * 0.32, mh * 0.25, 0, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
         }
@@ -561,52 +654,41 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
               }`}
             />
 
-            {/* LIVE MOTION VIEWPORT (Canvas) */}
-            {activeMode !== 'still_photo' ? (
-              <>
-                <canvas
-                  ref={motionCanvasRef}
-                  className="w-full h-full object-cover"
-                  style={{ filter: getLightingFilter() }}
-                />
+            {/* LIVE AR VIEWPORT (Universal Canvas for Webcam, Demo Motion & Still Photo) */}
+            <canvas
+              ref={motionCanvasRef}
+              className="w-full h-full object-cover"
+              style={{ filter: getLightingFilter() }}
+            />
 
-                {/* Shutter Button Overlay */}
-                <div className="absolute bottom-4 inset-x-0 flex items-center justify-center z-30 pointer-events-none">
-                  <button
-                    onClick={handleSnapMotionPicture}
-                    className="pointer-events-auto w-14 h-14 rounded-full border-4 border-white bg-gradient-to-r from-pink-500 to-rose-500 hover:scale-105 active:scale-95 shadow-xl shadow-pink-500/30 flex items-center justify-center transition-all group"
-                    title="Snap Picture from Motion Stream"
-                  >
-                    <Camera className="w-6 h-6 text-white group-hover:rotate-12 transition-transform" />
-                  </button>
+            {/* Shutter Button Overlay */}
+            <div className="absolute bottom-4 inset-x-0 flex items-center justify-center z-30 pointer-events-none">
+              <button
+                onClick={handleSnapMotionPicture}
+                className="pointer-events-auto w-14 h-14 rounded-full border-4 border-white bg-gradient-to-r from-pink-500 to-rose-500 hover:scale-105 active:scale-95 shadow-xl shadow-pink-500/30 flex items-center justify-center transition-all group"
+                title="Snap Picture from Motion Stream"
+              >
+                <Camera className="w-6 h-6 text-white group-hover:rotate-12 transition-transform" />
+              </button>
+            </div>
+
+            {/* Prompt to Start Camera if webcam mode selected but not active */}
+            {activeMode === 'motion_webcam' && !isWebcamActive && (
+              <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                <Video className="w-10 h-10 text-pink-400 animate-pulse" />
+                <div>
+                  <h4 className="text-sm font-bold text-slate-100">Ready for Live Motion AR Try-On</h4>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Turn on your camera to test foundation, lip shades, and clinical mesh in real time on your moving face.
+                  </p>
                 </div>
-
-                {/* Prompt to Start Camera if inactive */}
-                {activeMode === 'motion_webcam' && !isWebcamActive && (
-                  <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-6 text-center space-y-3">
-                    <Video className="w-10 h-10 text-pink-400 animate-pulse" />
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-100">Ready for Live Motion AR Try-On</h4>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Turn on your camera to test foundation, lip shades, and clinical mesh in real time on your moving face.
-                      </p>
-                    </div>
-                    <button
-                      onClick={startLiveCamera}
-                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-bold text-xs shadow-lg shadow-pink-500/25 flex items-center gap-2"
-                    >
-                      <Camera className="w-4 h-4" />
-                      <span>Start Live AR Camera</span>
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              /* STILL PHOTO VIEWPORT */
-              <div className="relative w-full h-full">
-                {avatarUrl && (
-                  <img src={avatarUrl} alt="Still Preview" className="w-full h-full object-cover" />
-                )}
+                <button
+                  onClick={startLiveCamera}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-bold text-xs shadow-lg shadow-pink-500/25 flex items-center gap-2"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>Start Live AR Camera</span>
+                </button>
               </div>
             )}
 
