@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import { SmartBundle } from '../agent-core/types';
-import { ShoppingBag, Tag, Check, Sparkles, DollarSign, TrendingDown, ArrowRight, ShieldCheck } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { ShoppingBag, Tag, Check, Sparkles, TrendingDown, ArrowRight, ShieldCheck } from 'lucide-react';
 
 interface CartProps {
   cart?: SmartBundle;
   onCheckoutComplete?: () => void;
 }
 
-export const SmartCartView: React.FC<CartProps> = ({ cart, onCheckoutComplete }) => {
+export const SmartCartView: React.FC<CartProps> = React.memo(({ cart, onCheckoutComplete }) => {
   const [checkedOut, setCheckedOut] = useState(false);
 
   if (!cart) {
@@ -20,13 +19,19 @@ export const SmartCartView: React.FC<CartProps> = ({ cart, onCheckoutComplete })
     );
   }
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     setCheckedOut(true);
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
+    // Bundle Optimization: Dynamically import canvas-confetti only on interaction
+    try {
+      const confetti = (await import('canvas-confetti')).default;
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
+    } catch {
+      // Non-blocking fallback
+    }
     if (onCheckoutComplete) onCheckoutComplete();
   };
 
@@ -95,7 +100,7 @@ export const SmartCartView: React.FC<CartProps> = ({ cart, onCheckoutComplete })
                 </h4>
                 <div className="text-[10px] text-slate-400">
                   {item.brand} • <span className="text-pink-400 capitalize">{item.category}</span>
-                  {item.selectedShade && ` • ${item.selectedShade}`}
+                  {item.selectedShade ? ` • ${item.selectedShade}` : null}
                 </div>
               </div>
             </div>
@@ -113,7 +118,7 @@ export const SmartCartView: React.FC<CartProps> = ({ cart, onCheckoutComplete })
       </div>
 
       {/* Cross-Agent Substitution Notice */}
-      {cart.substitutionHistory.length > 0 && (
+      {cart.substitutionHistory.length > 0 ? (
         <div className="mb-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-2.5 text-[11px] text-emerald-300 flex items-start space-x-2">
           <TrendingDown className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
           <div>
@@ -121,7 +126,7 @@ export const SmartCartView: React.FC<CartProps> = ({ cart, onCheckoutComplete })
             {cart.substitutionHistory.join('; ')}
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Pricing Summary & Checkout Button */}
       <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 space-y-2">
@@ -169,4 +174,4 @@ export const SmartCartView: React.FC<CartProps> = ({ cart, onCheckoutComplete })
       </div>
     </div>
   );
-};
+});

@@ -48,13 +48,18 @@ export class AgentEventBus {
   }
 
   public setExecutionSpeed(speed: 'realistic' | 'instant') {
-    this.state.executionSpeed = speed;
-    this.notifyState();
+    this.updateState(() => ({ executionSpeed: speed }));
   }
 
   public updateState(updater: (prev: MultiAgentState) => Partial<MultiAgentState>) {
     const changes = updater(this.state);
-    this.state = { ...this.state, ...changes };
+    this.state = {
+      ...this.state,
+      ...changes,
+      governance: changes.governance
+        ? { ...this.state.governance, ...changes.governance }
+        : this.state.governance
+    };
     this.notifyState();
   }
 
@@ -67,7 +72,9 @@ export class AgentEventBus {
       this.messageSubscribers.set(role, new Set());
     }
     this.messageSubscribers.get(role)!.add(callback);
-    return () => this.messageSubscribers.get(role)?.delete(callback);
+    return () => {
+      this.messageSubscribers.get(role)?.delete(callback);
+    };
   }
 
   public subscribeState(callback: StateSubscriber): () => void {
@@ -77,46 +84,55 @@ export class AgentEventBus {
   }
 
   public async publish(msg: AgentMessage): Promise<void> {
-    // 1. Vector Clock & Governance metric updates
-    this.state.governance.vectorClock += 1;
-    this.state.governance.totalMessagesAudited += 1;
-    if (msg.hopCount > this.state.governance.maxHopRecorded) {
-      this.state.governance.maxHopRecorded = msg.hopCount;
-    }
-    this.state.governance.invariantsPassed += 1;
+    // 1. Immutable State Update: Vector Clock & Governance Metrics
+    const activeEdges = msg.recipient.role !== 'BROADCAST'
+      ? [
+          ...this.state.activeEdges,
+          {
+            from: msg.sender.role,
+            to: msg.recipient.role as AgentRole,
+            intent: msg.intent,
+            timestamp: Date.now()
+          }
+        ].slice(-8)
+      : this.state.activeEdges;
 
-    // 2. Add to message history
-    this.state.messageHistory.push(msg);
+    // Cap messageHistory to latest 100 items to avoid unbounded memory growth
+    const messageHistory = [...this.state.messageHistory, msg].slice(-100);
 
-    // 3. Track active edge for UI graph rendering
-    if (msg.recipient.role !== 'BROADCAST') {
-      this.state.activeEdges.push({
-        from: msg.sender.role,
-        to: msg.recipient.role as AgentRole,
-        intent: msg.intent,
-        timestamp: Date.now()
-      });
-      if (this.state.activeEdges.length > 8) {
-        this.state.activeEdges.shift();
-      }
-    }
+    this.state = {
+      ...this.state,
+      governance: {
+        ...this.state.governance,
+        vectorClock: this.state.governance.vectorClock + 1,
+        totalMessagesAudited: this.state.governance.totalMessagesAudited + 1,
+        maxHopRecorded: Math.max(this.state.governance.maxHopRecorded, msg.hopCount),
+        invariantsPassed: this.state.governance.invariantsPassed + 1
+      },
+      activeEdges,
+      messageHistory
+    };
 
     this.notifyState();
 
-    // 4. Staggered execution delay if in 'realistic' speed mode for visual comprehension
+    // 2. Staggered execution delay if in 'realistic' speed mode for visual comprehension
     if (this.state.executionSpeed === 'realistic') {
       await new Promise((resolve) => setTimeout(resolve, 380));
     }
 
     const promises: Promise<any>[] = [];
 
-    // 5. Dispatch to targeted recipient
+    // 3. Dispatch to targeted recipient
     if (msg.recipient.role === 'BROADCAST') {
       this.messageSubscribers.forEach((subs) => {
         subs.forEach((sub) => {
-          const res = sub(msg);
-          if (res && typeof (res as any).then === 'function') {
-            promises.push(res);
+          try {
+            const res = sub(msg);
+            if (res && typeof (res as any).then === 'function') {
+              promises.push(res);
+            }
+          } catch (err) {
+            console.error('[AgentEventBus] Broadcast handler threw error:', err);
           }
         });
       });
@@ -124,23 +140,32 @@ export class AgentEventBus {
       const targeted = this.messageSubscribers.get(msg.recipient.role);
       if (targeted) {
         targeted.forEach((sub) => {
-          const res = sub(msg);
-          if (res && typeof (res as any).then === 'function') {
-            promises.push(res);
+          try {
+            const res = sub(msg);
+            if (res && typeof (res as any).then === 'function') {
+              promises.push(res);
+            }
+          } catch (err) {
+            console.error(`[AgentEventBus] Handler for ${msg.recipient.role} threw error:`, err);
           }
         });
       }
     }
 
-    // 6. Dispatch to global watchers (UI logs, auditor)
+    // 4. Dispatch to global watchers (UI logs, auditor)
     this.globalSubscribers.forEach((sub) => {
-      const res = sub(msg);
-      if (res && typeof (res as any).then === 'function') {
-        promises.push(res);
+      try {
+        const res = sub(msg);
+        if (res && typeof (res as any).then === 'function') {
+          promises.push(res);
+        }
+      } catch (err) {
+        console.error('[AgentEventBus] Global subscriber threw error:', err);
       }
     });
 
-    await Promise.all(promises);
+    // 5. Isolate subscriber promises with allSettled so individual failures don't halt the bus
+    await Promise.allSettled(promises);
   }
 
   public resetSession(goal?: string, budget?: number, userImage?: string) {
@@ -167,6 +192,7 @@ export class AgentEventBus {
   }
 
   private notifyState() {
-    this.stateSubscribers.forEach((sub) => sub({ ...this.state }));
+    const snapshot = { ...this.state };
+    this.stateSubscribers.forEach((sub) => sub(snapshot));
   }
 }

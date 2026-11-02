@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import { AestheticPlan } from '../agent-core/types';
-import { Palette, CheckCircle2, Sliders, Eye, Sparkles } from 'lucide-react';
+import { Palette, CheckCircle2, Sliders, Sparkles } from 'lucide-react';
 
 interface VTOViewerProps {
   aesthetic?: AestheticPlan;
   avatarUrl?: string;
 }
 
-export const VirtualTryOnViewer: React.FC<VTOViewerProps> = ({ aesthetic, avatarUrl }) => {
+export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({ aesthetic, avatarUrl }) => {
   const [sliderPos, setSliderPos] = useState(50);
-  const [activeCategory, setActiveCategory] = useState<'all' | 'foundation' | 'lipstick' | 'blush'>('all');
 
   if (!aesthetic) {
     return (
@@ -48,16 +47,16 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = ({ aesthetic, avatar
         {/* Interactive Before & After Split Image */}
         <div className="sm:col-span-6 relative aspect-square rounded-xl overflow-hidden border border-slate-700 select-none group">
           {/* Baseline Image */}
-          {avatarUrl && (
+          {avatarUrl ? (
             <img
               src={avatarUrl}
               alt="Original"
               className="absolute inset-0 w-full h-full object-cover filter contrast-95"
             />
-          )}
+          ) : null}
 
           {/* Rendered VTO Image with Clip-Path */}
-          {avatarUrl && (
+          {avatarUrl ? (
             <div
               className="absolute inset-0 overflow-hidden"
               style={{ clipPath: `inset(0 0 0 ${sliderPos}%)` }}
@@ -87,7 +86,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = ({ aesthetic, avatar
                 style={{ backgroundColor: blush?.hexColor || '#df826c' }}
               />
             </div>
-          )}
+          ) : null}
 
           {/* Slider Divider Line */}
           <div
@@ -99,7 +98,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = ({ aesthetic, avatar
             </div>
           </div>
 
-          {/* Hidden Drag Range Input */}
+          {/* Drag Range Input */}
           <input
             type="range"
             min="0"
@@ -159,4 +158,4 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = ({ aesthetic, avatar
       </div>
     </div>
   );
-};
+});

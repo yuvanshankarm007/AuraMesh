@@ -14,8 +14,15 @@ export class YouCamGatewayWorker {
   private fastMode: boolean = false;
 
   private constructor() {
-    const savedKey = typeof window !== 'undefined' ? localStorage.getItem('YOUCAM_API_KEY') : '';
-    this.apiKey = savedKey || '';
+    let savedKey = '';
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        savedKey = localStorage.getItem('YOUCAM_API_KEY') || '';
+      }
+    } catch {
+      // Handled: Private browsing or iframe sandbox security restrictions
+    }
+    this.apiKey = savedKey;
     this.mockMode = !this.apiKey;
   }
 
@@ -29,8 +36,12 @@ export class YouCamGatewayWorker {
   public setApiKey(key: string) {
     this.apiKey = key.trim();
     this.mockMode = !this.apiKey;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('YOUCAM_API_KEY', this.apiKey);
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem('YOUCAM_API_KEY', this.apiKey);
+      }
+    } catch {
+      // Handled: LocalStorage writes unavailable
     }
   }
 
@@ -98,21 +109,34 @@ export class YouCamGatewayWorker {
   }
 
   /**
-   * Poll async task status
+   * Poll async task status with timeout abort and early error detection
    */
   private async pollTaskResult(taskId: string, fallbackScores?: SkinDiagnosticScores): Promise<SkinDiagnosticScores> {
     const maxPolls = 5;
     for (let i = 0; i < maxPolls; i++) {
       await new Promise((res) => setTimeout(res, 1000));
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
+
         const res = await fetch(`${this.baseUrl}/task/skin-analysis/${taskId}`, {
-          headers: { 'Authorization': `Bearer ${this.apiKey}` }
+          headers: { 'Authorization': `Bearer ${this.apiKey}` },
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
+
+        // Immediate short-circuit on auth or client failure
+        if (res.status === 401 || res.status === 403 || res.status >= 500) {
+          console.warn(`[YouCamGatewayWorker] HTTP ${res.status} encountered during poll. Aborting to mock.`);
+          break;
+        }
+
         if (res.ok) {
           const data = await res.json();
           if (data.status === 'success') {
             return this.normalizeSkinScores(data.result, fallbackScores);
           }
+          if (data.status === 'failed') break;
         }
       } catch (e) {
         break;

@@ -2,16 +2,40 @@ import { AgentEventBus } from './eventBus';
 import { AgentMessage, AgentRole, AgentTier, MessageIntent } from './types';
 
 export abstract class BaseAgent {
+  private unsubscribe: (() => void) | null = null;
+
   constructor(
     public readonly role: AgentRole,
     public readonly tier: AgentTier,
     public readonly label: string,
     protected readonly bus: AgentEventBus
   ) {
-    this.bus.subscribe(this.role, (msg) => this.handleMessage(msg));
+    this.unsubscribe = this.bus.subscribe(this.role, (msg) => this.dispatchIncoming(msg));
   }
 
   abstract handleMessage(msg: AgentMessage): Promise<void>;
+
+  /**
+   * Dispatches incoming messages with session correlation gating to prevent stale event crossover
+   */
+  public async dispatchIncoming(msg: AgentMessage): Promise<void> {
+    const currentSessionId = this.bus.getState().sessionId;
+    if (msg.correlationId && msg.correlationId !== currentSessionId) {
+      console.warn(`[${this.role}] Discarding stale message ${msg.messageId} from prior session ${msg.correlationId}`);
+      return;
+    }
+    await this.handleMessage(msg);
+  }
+
+  /**
+   * Cleanup agent subscriptions to prevent memory leaks and duplicate listeners
+   */
+  public dispose(): void {
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
+  }
 
   /**
    * Horizontal Peer-to-Peer Communication
@@ -25,6 +49,14 @@ export abstract class BaseAgent {
     explanation: string,
     parentMsg?: AgentMessage
   ): Promise<void> {
+    const currentSessionId = this.bus.getState().sessionId;
+    const correlationId = parentMsg?.correlationId || currentSessionId;
+
+    // Drop outgoing dispatch if the parent message belonged to an aborted session
+    if (parentMsg && parentMsg.correlationId !== currentSessionId) {
+      return;
+    }
+
     const hop = parentMsg ? parentMsg.hopCount + 1 : 1;
 
     // Cycle prevention & hop-count monitor (bounds max end-to-end deliberation to 7 hops)
@@ -40,7 +72,7 @@ export abstract class BaseAgent {
 
     const msg: AgentMessage<T> = {
       messageId: 'msg_' + Math.random().toString(36).substring(2, 9),
-      correlationId: parentMsg?.correlationId || this.bus.getState().sessionId,
+      correlationId,
       parentId: parentMsg?.messageId,
       timestamp: Date.now(),
       hopCount: hop,
@@ -74,9 +106,10 @@ export abstract class BaseAgent {
     explanation: string,
     parentMsg?: AgentMessage
   ): Promise<void> {
+    const currentSessionId = this.bus.getState().sessionId;
     const msg: AgentMessage<T> = {
       messageId: 'msg_' + Math.random().toString(36).substring(2, 9),
-      correlationId: parentMsg?.correlationId || this.bus.getState().sessionId,
+      correlationId: parentMsg?.correlationId || currentSessionId,
       parentId: parentMsg?.messageId,
       timestamp: Date.now(),
       hopCount: parentMsg ? parentMsg.hopCount + 1 : 1,
@@ -107,9 +140,10 @@ export abstract class BaseAgent {
     explanation: string,
     parentMsg?: AgentMessage
   ): Promise<void> {
+    const currentSessionId = this.bus.getState().sessionId;
     const msg: AgentMessage<T> = {
       messageId: 'msg_' + Math.random().toString(36).substring(2, 9),
-      correlationId: parentMsg?.correlationId || this.bus.getState().sessionId,
+      correlationId: parentMsg?.correlationId || currentSessionId,
       parentId: parentMsg?.messageId,
       timestamp: Date.now(),
       hopCount: parentMsg ? parentMsg.hopCount + 1 : 1,
@@ -142,9 +176,10 @@ export abstract class BaseAgent {
     explanation: string,
     parentMsg?: AgentMessage
   ): Promise<void> {
+    const currentSessionId = this.bus.getState().sessionId;
     const msg: AgentMessage<T> = {
       messageId: 'msg_' + Math.random().toString(36).substring(2, 9),
-      correlationId: parentMsg?.correlationId || this.bus.getState().sessionId,
+      correlationId: parentMsg?.correlationId || currentSessionId,
       parentId: parentMsg?.messageId,
       timestamp: Date.now(),
       hopCount: parentMsg ? parentMsg.hopCount + 1 : 1,

@@ -1,6 +1,5 @@
 import React from 'react';
 import { Sparkles, Cpu, ShieldCheck, Key, RefreshCw, Layers, Gauge, Zap } from 'lucide-react';
-import { AgentEventBus } from '../agent-core/eventBus';
 
 interface HeaderProps {
   onOpenApiKey: () => void;
@@ -10,7 +9,7 @@ interface HeaderProps {
   onToggleSpeed: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+const HeaderComponent: React.FC<HeaderProps> = ({
   onOpenApiKey,
   onReset,
   isSimulated,
@@ -107,3 +106,5 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+
+export const Header = React.memo(HeaderComponent);

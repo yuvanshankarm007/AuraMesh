@@ -13,25 +13,35 @@ export class ConvergenceMonitor extends BaseAgent {
   }
 
   private async auditMessage(msg: AgentMessage): Promise<void> {
-    const state = this.bus.getState();
-
     // 1. Audit Hop Count limit (Invariant 1: No message chains exceed MAX_HOPS = 7)
     if (msg.hopCount > 7 && msg.intent !== 'ESCALATE') {
-      state.governance.deadlocksPrevented += 1;
+      this.bus.updateState((prev) => ({
+        governance: {
+          ...prev.governance,
+          deadlocksPrevented: prev.governance.deadlocksPrevented + 1
+        }
+      }));
+
       await this.escalate(
         'CYCLE_DETECTED_MAX_HOPS_EXCEEDED',
         { msgId: msg.messageId, offendingHops: msg.hopCount, sender: msg.sender.role },
-        `Convergence Violation: Message chain exceeded max allowed hops (${msg.hopCount} > 4). Intercepting for stability.`
+        `Convergence Violation: Message chain exceeded max allowed hops (${msg.hopCount} > 7). Intercepting for stability.`
       );
       return;
     }
 
     // 2. Audit Clinical Safety Veto (Invariant 2: No dropping SPF or conflicting acids)
-    if (msg.topic === 'SUBSTITUTION_PROPOSAL_DISPATCH') {
-      if (msg.payload?.proposedDrop === 'prod_spf_fluid') {
-        state.governance.safetyVetoesIssued += 1;
-        console.warn('[ConvergenceMonitor] Blocked hazardous attempt to eliminate SPF defense.');
-      }
+    if (
+      msg.topic === 'CLINICAL_SAFETY_VETO' ||
+      (msg.topic === 'BUDGET_EXCEEDED_SUBSTITUTION_REQUEST' &&
+        msg.payload?.candidates?.some((c: any) => c.type === 'DROP_SPF'))
+    ) {
+      this.bus.updateState((prev) => ({
+        governance: {
+          ...prev.governance,
+          safetyVetoesIssued: prev.governance.safetyVetoesIssued + 1
+        }
+      }));
     }
   }
 }

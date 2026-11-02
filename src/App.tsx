@@ -53,7 +53,19 @@ export const App: React.FC = () => {
 
     triggerPersonaRun(DEMO_PERSONAS[0]);
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      [ceoRef.current, monitorRef.current, dermaRef.current, formulaRef.current, stylistRef.current, commerceRef.current].forEach(agent => {
+        agent?.dispose();
+      });
+      ceoRef.current = null;
+      monitorRef.current = null;
+      dermaRef.current = null;
+      formulaRef.current = null;
+      stylistRef.current = null;
+      commerceRef.current = null;
+      bus.clearSubscribers();
+    };
   }, []);
 
   const triggerPersonaRun = async (persona: DemoPersona) => {

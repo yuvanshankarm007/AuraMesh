@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { SkinDiagnosticScores } from '../agent-core/types';
-import { Clock, TrendingUp, CheckCircle, ShieldCheck, Sparkles, RefreshCw } from 'lucide-react';
+import { Clock, TrendingUp, CheckCircle, Sparkles } from 'lucide-react';
 
 interface ChronoSkinProps {
   scores?: SkinDiagnosticScores;
   avatarUrl?: string;
 }
 
-export const ChronoSkinProgress: React.FC<ChronoSkinProps> = ({ scores, avatarUrl }) => {
+export const ChronoSkinProgress: React.FC<ChronoSkinProps> = React.memo(({ scores, avatarUrl }) => {
   const [selectedDay, setSelectedDay] = useState<1 | 14 | 30>(14);
 
   if (!scores) return null;
@@ -31,7 +31,8 @@ export const ChronoSkinProgress: React.FC<ChronoSkinProps> = ({ scores, avatarUr
         texture: Math.min(100, Math.round(scores.texture + (100 - scores.texture) * 0.40)),
         pores: Math.min(100, Math.round(scores.pores + (100 - scores.pores) * 0.35)),
         skinAge: Math.max(18, scores.skinAge - 1),
-        barrierHealth: 'sensitized'
+        // Preserve intact barrier if already intact; step up severely compromised to sensitized
+        barrierHealth: scores.barrierHealth === 'severely_compromised' ? 'sensitized' : scores.barrierHealth
       };
     }
     // Day 30
@@ -96,7 +97,7 @@ export const ChronoSkinProgress: React.FC<ChronoSkinProps> = ({ scores, avatarUr
       {/* Before vs After Visualizer */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
         <div className="sm:col-span-4 relative aspect-square rounded-xl overflow-hidden border border-slate-700">
-          {avatarUrl && (
+          {avatarUrl ? (
             <img
               src={avatarUrl}
               alt="Subject"
@@ -104,16 +105,16 @@ export const ChronoSkinProgress: React.FC<ChronoSkinProps> = ({ scores, avatarUr
                 selectedDay === 30 ? 'filter contrast-105 brightness-105 saturate-105' : ''
               }`}
             />
-          )}
+          ) : null}
 
           {/* Simulated Clearing Filter */}
-          {selectedDay > 1 && (
+          {selectedDay > 1 ? (
             <div
               className={`absolute inset-0 pointer-events-none transition-all duration-700 ${
                 selectedDay === 14 ? 'backdrop-blur-[0.5px] bg-emerald-500/5' : 'backdrop-blur-[1px] bg-pink-500/10'
               }`}
             />
-          )}
+          ) : null}
 
           <div className="absolute bottom-2 left-2 right-2 bg-slate-950/80 backdrop-blur-sm rounded-lg p-1.5 border border-slate-800 text-center">
             <span className="text-[10px] text-emerald-400 font-bold flex items-center justify-center gap-1">
@@ -129,7 +130,7 @@ export const ChronoSkinProgress: React.FC<ChronoSkinProps> = ({ scores, avatarUr
             <div className="flex justify-between text-[11px] mb-1">
               <span className="text-slate-300 font-medium">Acne Clearance Index</span>
               <span className="font-mono text-emerald-400 font-bold">
-                {projected.acne}/100 {selectedDay > 1 && `(+${projected.acne - scores.acne} pts)`}
+                {projected.acne}/100 {selectedDay > 1 ? `(+${projected.acne - scores.acne} pts)` : ''}
               </span>
             </div>
             <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
@@ -144,7 +145,7 @@ export const ChronoSkinProgress: React.FC<ChronoSkinProps> = ({ scores, avatarUr
             <div className="flex justify-between text-[11px] mb-1">
               <span className="text-slate-300 font-medium">Erythema (Redness) Resolution</span>
               <span className="font-mono text-emerald-400 font-bold">
-                {projected.redness}/100 {selectedDay > 1 && `(+${projected.redness - scores.redness} pts)`}
+                {projected.redness}/100 {selectedDay > 1 ? `(+${projected.redness - scores.redness} pts)` : ''}
               </span>
             </div>
             <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
@@ -159,7 +160,7 @@ export const ChronoSkinProgress: React.FC<ChronoSkinProps> = ({ scores, avatarUr
             <div className="flex justify-between text-[11px] mb-1">
               <span className="text-slate-300 font-medium">Surface Smoothness & Pores</span>
               <span className="font-mono text-emerald-400 font-bold">
-                {projected.texture}/100 {selectedDay > 1 && `(+${projected.texture - scores.texture} pts)`}
+                {projected.texture}/100 {selectedDay > 1 ? `(+${projected.texture - scores.texture} pts)` : ''}
               </span>
             </div>
             <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
@@ -208,4 +209,4 @@ export const ChronoSkinProgress: React.FC<ChronoSkinProps> = ({ scores, avatarUr
       </div>
     </div>
   );
-};
+});

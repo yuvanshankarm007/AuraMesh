@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { AgentMessage, MessageIntent } from '../agent-core/types';
 import { ChevronDown, ChevronRight, ArrowRight, MessageSquare, Terminal } from 'lucide-react';
 
@@ -6,8 +6,10 @@ interface LiveLogProps {
   messages: AgentMessage[];
 }
 
-export const LiveAgentLog: React.FC<LiveLogProps> = ({ messages }) => {
+const LiveAgentLogComponent: React.FC<LiveLogProps> = ({ messages }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
   const toggleExpand = (id: string) => {
     setExpandedId(prev => prev === id ? null : id);
@@ -53,7 +55,7 @@ export const LiveAgentLog: React.FC<LiveLogProps> = ({ messages }) => {
             <p>Select a persona or upload a photo to start multi-agent execution</p>
           </div>
         ) : (
-          messages.slice().reverse().map((msg) => {
+          reversedMessages.map((msg) => {
             const isExpanded = expandedId === msg.messageId;
             return (
               <div
@@ -107,3 +109,5 @@ export const LiveAgentLog: React.FC<LiveLogProps> = ({ messages }) => {
     </div>
   );
 };
+
+export const LiveAgentLog = React.memo(LiveAgentLogComponent);

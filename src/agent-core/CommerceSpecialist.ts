@@ -130,18 +130,15 @@ export class CommerceSpecialist extends BaseAgent {
     const isAcne = (diagnostics?.acne || 50) < 60;
     const isMature = (diagnostics?.wrinkles || 80) < 65;
 
-    const items: ProductItem[] = [
-      PRODUCT_CATALOG.find(p => p.id === 'prod_niacinamide_10')!,
-      PRODUCT_CATALOG.find(p => p.id === 'prod_spf_fluid')!,
-      PRODUCT_CATALOG.find(p => p.id === (diagnostics?.undertone === 'warm' ? 'prod_vto_tint_satin' : 'prod_vto_tint_olive'))!
+    const rawCandidates = [
+      PRODUCT_CATALOG.find(p => p.id === 'prod_niacinamide_10'),
+      PRODUCT_CATALOG.find(p => p.id === 'prod_spf_fluid'),
+      PRODUCT_CATALOG.find(p => p.id === (diagnostics?.undertone === 'warm' ? 'prod_vto_tint_satin' : 'prod_vto_tint_olive')),
+      isAcne ? PRODUCT_CATALOG.find(p => p.id === 'prod_azelaic_10') : null,
+      isMature ? PRODUCT_CATALOG.find(p => p.id === 'prod_retinol_encap') : null
     ];
 
-    if (isAcne) {
-      items.push(PRODUCT_CATALOG.find(p => p.id === 'prod_azelaic_10')!);
-    }
-    if (isMature) {
-      items.push(PRODUCT_CATALOG.find(p => p.id === 'prod_retinol_encap')!);
-    }
+    const items: ProductItem[] = rawCandidates.filter((item): item is ProductItem => Boolean(item));
 
     const subtotal = items.reduce((sum, i) => sum + i.price, 0);
     const bundleDiscount = subtotal * 0.12; // 12% initial discount

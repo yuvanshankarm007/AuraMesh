@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DEMO_PERSONAS, DemoPersona } from '../data/personas';
-import { Camera, DollarSign, Sliders, UserCheck, Play, Video, X } from 'lucide-react';
+import { Camera, DollarSign, Sliders, UserCheck, Play, Video, X, Upload } from 'lucide-react';
 
 interface PersonaSelectorProps {
   selectedPersona: DemoPersona | null;
@@ -23,6 +23,17 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Stop camera stream tracks on unmount to prevent resource leak
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -44,10 +55,12 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
       setIsWebcamOpen(true);
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 480 } });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch((err) => console.warn('Webcam playback error:', err));
+        }
+      }, 50);
     } catch (err) {
       console.warn('Webcam permission denied or unavailable:', err);
       setIsWebcamOpen(false);
@@ -71,7 +84,7 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
 
   const stopWebcam = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
     setIsWebcamOpen(false);
@@ -116,6 +129,23 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
           </button>
 
           <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isRunning}
+            className="text-xs flex items-center space-x-1.5 px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all"
+            title="Upload Custom Image"
+          >
+            <Upload className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Upload</span>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFileUpload}
+          />
+
+          <button
             onClick={startWebcam}
             disabled={isRunning}
             className="text-xs flex items-center space-x-1.5 px-3 py-1 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 text-pink-300 border border-pink-500/30 transition-all"
@@ -133,7 +163,7 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
           return (
             <div
               key={p.id}
-              onClick={() => !isRunning && onSelectPersona(p)}
+              onClick={() => (!isRunning ? onSelectPersona(p) : undefined)}
               className={`p-3 rounded-xl border cursor-pointer transition-all flex items-start space-x-3 ${
                 isSelected
                   ? 'bg-slate-850 border-pink-500/60 shadow-lg shadow-pink-500/10 ring-1 ring-pink-500/50'
@@ -168,7 +198,7 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
       </div>
 
       {/* Interactive Custom Scenario & Budget Slider Drawer */}
-      {showCustomDrawer && (
+      {showCustomDrawer ? (
         <div className="mt-4 p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-pink-400 flex items-center gap-1.5">
@@ -228,10 +258,10 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Live Webcam Modal */}
-      {isWebcamOpen && (
+      {isWebcamOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-4 relative shadow-2xl">
             <button
@@ -255,7 +285,7 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
             </button>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

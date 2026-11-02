@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { MultiAgentState, AgentRole } from '../agent-core/types';
-import { Activity, Shield, Sparkles, Beaker, Palette, ShoppingBag, Terminal, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Activity, Shield, Sparkles, Beaker, Palette, ShoppingBag, Terminal, CheckCircle2 } from 'lucide-react';
 
 interface VisualizerProps {
   state: MultiAgentState;
@@ -17,7 +17,7 @@ interface NodeCoord {
   sublabel: string;
 }
 
-export const AgentWebVisualizer: React.FC<VisualizerProps> = ({ state }) => {
+const AgentWebVisualizerComponent: React.FC<VisualizerProps> = ({ state }) => {
   const width = 800;
   const height = 320;
 
@@ -295,10 +295,12 @@ export const AgentWebVisualizer: React.FC<VisualizerProps> = ({ state }) => {
         <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-2 text-center col-span-2 sm:col-span-1">
           <div className="text-slate-500 uppercase tracking-wider">Deadlocks</div>
           <div className="font-mono text-emerald-400 font-bold text-xs mt-0.5">
-            0 Detected
+            {state.governance.deadlocksPrevented} Prevented
           </div>
         </div>
       </div>
     </div>
   );
 };
+
+export const AgentWebVisualizer = React.memo(AgentWebVisualizerComponent);

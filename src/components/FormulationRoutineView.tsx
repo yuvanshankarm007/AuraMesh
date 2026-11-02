@@ -1,12 +1,12 @@
 import React from 'react';
 import { FormulationPlan } from '../agent-core/types';
-import { Beaker, Sun, Moon, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Beaker, Sun, Moon, AlertCircle } from 'lucide-react';
 
 interface RoutineProps {
   formulation?: FormulationPlan;
 }
 
-export const FormulationRoutineView: React.FC<RoutineProps> = ({ formulation }) => {
+const FormulationRoutineViewComponent: React.FC<RoutineProps> = ({ formulation }) => {
   if (!formulation) {
     return (
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-sm flex flex-col items-center justify-center h-[340px] text-slate-500 text-xs">
@@ -89,3 +89,5 @@ export const FormulationRoutineView: React.FC<RoutineProps> = ({ formulation }) 
     </div>
   );
 };
+
+export const FormulationRoutineView = React.memo(FormulationRoutineViewComponent);

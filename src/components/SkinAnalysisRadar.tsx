@@ -8,7 +8,7 @@ interface RadarProps {
   avatarUrl?: string;
 }
 
-export const SkinAnalysisRadar: React.FC<RadarProps> = ({ scores, avatarUrl }) => {
+const SkinAnalysisRadarComponent: React.FC<RadarProps> = ({ scores, avatarUrl }) => {
   const [activeTab, setActiveTab] = useState<'realtime' | 'chronoskin'>('realtime');
 
   if (!scores) {
@@ -125,3 +125,5 @@ export const SkinAnalysisRadar: React.FC<RadarProps> = ({ scores, avatarUrl }) =
     </div>
   );
 };
+
+export const SkinAnalysisRadar = React.memo(SkinAnalysisRadarComponent);
