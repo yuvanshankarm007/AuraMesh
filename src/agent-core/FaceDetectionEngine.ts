@@ -9,6 +9,7 @@ export class FaceDetectionEngine {
   private static instance: FaceDetectionEngine;
   private offscreenCanvas: HTMLCanvasElement | null = null;
   private offscreenCtx: CanvasRenderingContext2D | null = null;
+  private prevBox: { x: number; y: number; w: number; h: number } | null = null;
 
   private constructor() {
     if (typeof document !== 'undefined') {
@@ -123,10 +124,10 @@ export class FaceDetectionEngine {
     const data = imgData.data;
 
     let skinCount = 0;
-    let minX = sw;
-    let maxX = 0;
-    let minY = sh;
-    let maxY = 0;
+    let sumX = 0;
+    let sumY = 0;
+    let sumSqX = 0;
+    let sumSqY = 0;
 
     let sumR = 0;
     let sumG = 0;
@@ -143,10 +144,10 @@ export class FaceDetectionEngine {
 
         if (this.isSkinPixel(r, g, b)) {
           skinCount++;
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
+          sumX += x;
+          sumY += y;
+          sumSqX += x * x;
+          sumSqY += y * y;
 
           sumR += r;
           sumG += g;
@@ -160,27 +161,47 @@ export class FaceDetectionEngine {
     const totalPixels = sw * sh;
     const avgLux = Math.round(sumLux / totalPixels);
 
-    let boxX = 0.22;
+    let boxX = 0.24;
     let boxY = 0.14;
-    let boxW = 0.56;
+    let boxW = 0.52;
     let boxH = 0.68;
     let confidence = 0.92;
 
-    // If skin pixels detected, compute calibrated bounding box
-    if (skinCount >= 40 && maxX > minX && maxY > minY) {
-      boxX = Math.max(0.05, (minX - 4) / sw);
-      boxY = Math.max(0.05, (minY - 4) / sh);
-      boxW = Math.min(0.90 - boxX, Math.max(0.25, (maxX - minX + 8) / sw));
-      boxH = Math.min(0.90 - boxY, Math.max(0.30, (maxY - minY + 8) / sh));
+    // Statistical Center-Weighted Gaussian Clustering for Face Tracking
+    if (skinCount >= 40) {
+      const meanX = sumX / skinCount;
+      const meanY = sumY / skinCount;
+      const varX = Math.max(16, (sumSqX / skinCount) - (meanX * meanX));
+      const varY = Math.max(25, (sumSqY / skinCount) - (meanY * meanY));
+      const stdX = Math.sqrt(varX);
+      const stdY = Math.sqrt(varY);
 
-      const aspect = (boxH * sh) / (boxW * sw);
-      if (aspect >= 0.8 && aspect <= 1.8) {
-        confidence = Math.min(0.99, 0.90 + (skinCount / totalPixels) * 0.25);
+      let targetW = Math.max(0.36, Math.min(0.62, (stdX * 3.4) / sw));
+      let targetH = Math.max(0.46, Math.min(0.74, (stdY * 3.6) / sh));
+
+      // Strictly lock to human portrait anatomical ratio (1.22 - 1.48)
+      if (targetH / targetW < 1.22) targetH = targetW * 1.30;
+      if (targetH / targetW > 1.48) targetW = targetH / 1.34;
+
+      let targetX = Math.max(0.06, Math.min(0.94 - targetW, (meanX / sw) - targetW * 0.5));
+      let targetY = Math.max(0.06, Math.min(0.94 - targetH, (meanY / sh) - targetH * 0.46));
+
+      // Temporal Exponential Moving Average (Anti-jitter filter)
+      if (this.prevBox) {
+        boxX = this.prevBox.x * 0.70 + targetX * 0.30;
+        boxY = this.prevBox.y * 0.70 + targetY * 0.30;
+        boxW = this.prevBox.w * 0.70 + targetW * 0.30;
+        boxH = this.prevBox.h * 0.70 + targetH * 0.30;
       } else {
-        confidence = 0.86;
+        boxX = targetX;
+        boxY = targetY;
+        boxW = targetW;
+        boxH = targetH;
       }
+      this.prevBox = { x: boxX, y: boxY, w: boxW, h: boxH };
+      confidence = 0.95;
     } else {
-      // Default portrait centered bounding box with high confidence for selfies
+      // Default portrait centered bounding box for selfies
       confidence = 0.88;
       // Sample center pixels for mean color
       for (let y = Math.round(sh * 0.3); y < Math.round(sh * 0.7); y++) {
