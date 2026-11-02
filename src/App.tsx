@@ -176,6 +176,7 @@ export const App: React.FC = () => {
           onSelectPersona={triggerPersonaRun}
           onCustomScenario={handleCustomScenario}
           isRunning={agentState.currentStep === 'ANALYZING'}
+          currentUserImage={agentState.userImage}
         />
 
         {/* Environmental & Climate Telemetry Bar */}

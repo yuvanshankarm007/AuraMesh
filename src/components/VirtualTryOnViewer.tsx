@@ -54,6 +54,12 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({ aesthe
           </h3>
         </div>
         <div className="flex items-center space-x-2">
+          {avatarUrl && avatarUrl.startsWith('data:') && (
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 border border-pink-500/40 flex items-center gap-1 font-mono shadow-sm">
+              <Sparkles className="w-3 h-3 text-pink-400" />
+              Your Custom Face
+            </span>
+          )}
           <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
             {aesthetic.recommendedPalette}
           </span>
