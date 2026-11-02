@@ -289,54 +289,70 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
     }
   };
 
+  // Synchronize webcam stream to video element when modal opens
+  useEffect(() => {
+    if (isWebcamOpen && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [isWebcamOpen]);
+
   const startWebcam = async () => {
     try {
       setIsWebcamOpen(true);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 480, height: 480, facingMode: 'user' }
-      });
+      let stream: MediaStream | null = null;
+      try {
+        // Ideal user-facing webcam
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+        });
+      } catch {
+        // Broad universal fallback for any system webcam / camera driver
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+
       streamRef.current = stream;
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch((err) => console.warn('Webcam playback error:', err));
-        }
-      }, 50);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch((err) => console.warn('Webcam playback error:', err));
+      }
     } catch (err: any) {
       console.warn('Webcam permission denied or unavailable:', err);
       setIsWebcamOpen(false);
-      setWebcamNotice('Webcam access was denied or not found. Please click "Upload Photo" to select any selfie from your files!');
+      setWebcamNotice('Webcam was unavailable or blocked. Click "Upload Selfie" to pick a photo from your files!');
       setTimeout(() => setWebcamNotice(null), 6000);
     }
   };
 
   const captureWebcam = async () => {
-    if (videoRef.current) {
-      const canvas = document.createElement('canvas');
-      const w = videoRef.current.videoWidth || 480;
-      const h = videoRef.current.videoHeight || 480;
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        // Natural selfie mirror orientation
-        ctx.translate(w, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(videoRef.current, 0, 0, w, h);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.94);
-        stopWebcam();
-        setCustomSelfieUrl(dataUrl);
+    const video = videoRef.current;
+    if (!video) return;
 
-        // Run Detection Engine on captured frame
-        setIsDetecting(true);
-        const engine = FaceDetectionEngine.getInstance();
-        const faceResult = await engine.detectFaceFromDataUrl(dataUrl);
-        setIsDetecting(false);
-        setFaceDetectionState(faceResult);
+    const w = video.videoWidth || 640;
+    const h = video.videoHeight || 480;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
 
-        const diagnostics = engine.generateSkinScoresFromDetection(faceResult, customConcern);
-        onCustomScenario(dataUrl, customGoal, customBudget, diagnostics, faceResult);
-      }
+    if (ctx) {
+      // Natural selfie mirror orientation
+      ctx.translate(w, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      stopWebcam();
+      setCustomSelfieUrl(dataUrl);
+
+      // Run Detection Engine on captured frame
+      setIsDetecting(true);
+      const engine = FaceDetectionEngine.getInstance();
+      const faceResult = await engine.detectFaceFromDataUrl(dataUrl);
+      setIsDetecting(false);
+      setFaceDetectionState(faceResult);
+
+      const diagnostics = engine.generateSkinScoresFromDetection(faceResult, customConcern);
+      onCustomScenario(dataUrl, customGoal, customBudget, diagnostics, faceResult);
     }
   };
 
@@ -469,7 +485,14 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
+          onClick={() => {
+            if (customSelfieUrl && !isCustomActive && !isRunning) {
+              handleReRunCustomSelfie();
+            }
+          }}
           className={`p-4 rounded-xl border transition-all relative overflow-hidden ${
+            customSelfieUrl && !isCustomActive ? 'cursor-pointer hover:border-pink-400' : ''
+          } ${
             isCustomActive
               ? 'bg-gradient-to-r from-pink-950/40 via-purple-950/30 to-slate-900 border-pink-500/70 shadow-lg shadow-pink-500/10 ring-1 ring-pink-500/50'
               : isDragging
@@ -765,6 +788,17 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
               >
                 <Camera className="w-4 h-4" />
                 <span>Capture Snapshot & Run Skin AI</span>
+              </button>
+              <button
+                onClick={() => {
+                  stopWebcam();
+                  fileInputRef.current?.click();
+                }}
+                className="px-3.5 py-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+                title="Upload image from file instead"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload</span>
               </button>
               <button
                 onClick={stopWebcam}
