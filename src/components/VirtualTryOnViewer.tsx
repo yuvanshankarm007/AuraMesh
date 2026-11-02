@@ -22,7 +22,11 @@ import {
   Wand2,
   Zap,
   Flame,
-  Heart
+  Heart,
+  Activity,
+  Clock,
+  Download,
+  ShieldCheck
 } from 'lucide-react';
 
 interface VTOViewerProps {
@@ -35,6 +39,8 @@ interface VTOViewerProps {
     diagnostics: SkinDiagnosticScores
   ) => void;
 }
+
+export type ARStudioMode = 'snapchat_beauty' | 'clinical_scanner' | 'chronoskin_forecast';
 
 // ----------------------------------------------------------------------------
 // SNAPCHAT LENSES SPECIFICATIONS
@@ -288,7 +294,11 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
   // Mode: 'motion_webcam' (Live Camera), 'demo_motion' (Animated Motion Feed), 'still_photo' (Static)
   const [activeMode, setActiveMode] = useState<'motion_webcam' | 'demo_motion' | 'still_photo'>('motion_webcam');
 
-  // Snapchat Filter Experience: 'snap_full' (100% full-face Snapchat filter) vs 'split_compare' (Before/After slider)
+  // Studio Mode: 'snapchat_beauty' (AR Makeup Lenses) | 'clinical_scanner' (YouCam Heatmap) | 'chronoskin_forecast' (30-day wear forecast)
+  const [studioMode, setStudioMode] = useState<ARStudioMode>('snapchat_beauty');
+  const [chronoSkinDay, setChronoSkinDay] = useState<number>(1); // Day 1, 14, 30
+
+  // View Mode: 'snap_full' (100% full-face filter) vs 'split_compare' (Before/After slider)
   const [viewMode, setViewMode] = useState<'snap_full' | 'split_compare'>('snap_full');
   const [activeLensId, setActiveLensId] = useState<string>('snap_glam');
   const [smoothingIntensity, setSmoothingIntensity] = useState<number>(0.85);
@@ -296,7 +306,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
   const [sliderPos, setSliderPos] = useState(50);
   const [lighting, setLighting] = useState<LightingMode>('daylight');
   const [layers, setLayers] = useState({
-    diagnosticMesh: false, // Default off in Snapchat beauty mode
+    diagnosticMesh: false,
     skincareGlow: true,
     cosmeticMakeup: true
   });
@@ -304,7 +314,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
   // Active Snapchat Lens
   const activeLens = SNAPCHAT_LENSES.find(l => l.id === activeLensId) || SNAPCHAT_LENSES[0];
 
-  // Selected Swatches (synced with active lens)
+  // Selected Swatches
   const [selectedFoundation, setSelectedFoundation] = useState(activeLens.foundationTint);
   const [selectedLip, setSelectedLip] = useState(activeLens.lipColor);
 
@@ -394,8 +404,8 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-        osc.frequency.setValueAtTime(880.00, ctx.currentTime + 0.05); // A5
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.setValueAtTime(880.00, ctx.currentTime + 0.05);
         gain.gain.setValueAtTime(0.12, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
         osc.connect(gain);
@@ -481,7 +491,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
     }
   };
 
-  // CONTINUOUS LIVE SNAPCHAT AR MOTION LOOP
+  // CONTINUOUS LIVE SNAPCHAT & CLINICAL AR MOTION LOOP
   useEffect(() => {
     let isSubscribed = true;
     const engine = FaceDetectionEngine.getInstance();
@@ -505,7 +515,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         canvas.height = ch;
       }
 
-      // 1. RENDER BASE SOURCE (Live Webcam vs Demo Motion Simulation vs Still Photo)
+      // 1. RENDER BASE SOURCE
       if (activeMode === 'still_photo') {
         if (stillImgRef.current && stillImgRef.current.complete) {
           ctx.drawImage(stillImgRef.current, 0, 0, cw, ch);
@@ -516,7 +526,6 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
       } else if (activeMode === 'motion_webcam' && videoRef.current && isWebcamActive) {
         const video = videoRef.current;
         if (video.readyState >= 2) {
-          // Mirrored selfie view like Snapchat
           ctx.save();
           ctx.translate(cw, 0);
           ctx.scale(-1, 1);
@@ -527,7 +536,6 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
           ctx.fillRect(0, 0, cw, ch);
         }
       } else if (activeMode === 'demo_motion') {
-        // Animated Motion Picture Simulation (Subtle Head Sway + Natural Face Motion)
         demoMotionTick.current += 0.04;
         const tick = demoMotionTick.current;
         const swayX = Math.sin(tick) * 12;
@@ -536,11 +544,10 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         ctx.fillStyle = '#090d16';
         ctx.fillRect(0, 0, cw, ch);
 
-        // Portrait Head & Neck
         const cx = cw * 0.5 + swayX;
         const cy = ch * 0.48 + swayY;
 
-        // Shoulder / Torso
+        // Torso
         ctx.fillStyle = '#1e293b';
         ctx.beginPath();
         ctx.ellipse(cx, ch * 0.95, cw * 0.45, ch * 0.25, 0, 0, Math.PI * 2);
@@ -562,7 +569,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         ctx.ellipse(cx, cy - 65, 105, 75, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Animated Eyes (Blink every few seconds)
+        // Eyes
         const isBlinking = Math.sin(tick * 0.5) > 0.94;
         ctx.fillStyle = '#1e293b';
         if (isBlinking) {
@@ -591,7 +598,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         ctx.fill();
       }
 
-      // 2. RUN REAL-TIME COMPUTER VISION (Throttled every 5 frames for buttery smooth 60 FPS)
+      // 2. COMPUTER VISION TRACKING (Throttled for 60 FPS)
       frameTickRef.current += 1;
       let result = cachedFaceRef.current;
       if (frameTickRef.current % 5 === 0 || !result) {
@@ -606,21 +613,16 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
       const lmk = result.landmarks;
       const tick = demoMotionTick.current;
 
-      // Calculate Split vs Full AR bounds
-      // In Snapchat Full mode: splitX = 0 (Filter covers 100% of face!)
-      // In Split Compare mode: splitX = (sliderPos / 100) * cw
       const isFullSnap = viewMode === 'snap_full';
       const splitX = isFullSnap ? 0 : (sliderPos / 100) * cw;
 
-      // 3. RENDER SNAPCHAT BEAUTY AR FILTER
+      // 3. RENDER ACTIVE AR STUDIO EXPERIENCE
       if (splitX < cw) {
         ctx.save();
-        // Clip to right of slider line (or full canvas if snap_full)
         ctx.beginPath();
         ctx.rect(splitX, 0, cw - splitX, ch);
         ctx.clip();
 
-        // Facial Geometry
         const bx = (result.boundingBox.x / 100) * cw;
         const by = (result.boundingBox.y / 100) * ch;
         const bw = (result.boundingBox.width / 100) * cw;
@@ -634,208 +636,332 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         const ley = (lmk.leftEye.y / 100) * ch;
         const rex = (lmk.rightEye.x / 100) * cw;
         const rey = (lmk.rightEye.y / 100) * ch;
+        const blX1 = (lmk.leftCheek.x / 100) * cw;
+        const blY1 = (lmk.leftCheek.y / 100) * ch;
+        const blX2 = (lmk.rightCheek.x / 100) * cw;
+        const blY2 = (lmk.rightCheek.y / 100) * ch;
+        const noseX = (lmk.noseTip.x / 100) * cw;
+        const noseY = (lmk.noseTip.y / 100) * ch;
 
-        // A. SNAPCHAT SKIN AIRBRUSH & PORE SMOOTHING
-        if (layers.skincareGlow) {
+        // ====================================================================
+        // OPTION 1: SNAPCHAT BEAUTY FILTER
+        // ====================================================================
+        if (studioMode === 'snapchat_beauty') {
+          // A. Airbrush Skin Smoothing
+          if (layers.skincareGlow) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'soft-light';
+            const foundGrad = ctx.createRadialGradient(fcx, fcy, 12, fcx, fcy, Math.max(frx, fry));
+            const fAlpha = 0.55 * smoothingIntensity;
+            foundGrad.addColorStop(0, hexToRgba(selectedFoundation, fAlpha));
+            foundGrad.addColorStop(0.70, hexToRgba(selectedFoundation, fAlpha * 0.65));
+            foundGrad.addColorStop(1, hexToRgba(selectedFoundation, 0));
+            ctx.fillStyle = foundGrad;
+            ctx.beginPath();
+            ctx.ellipse(fcx, fcy, frx, fry, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            const glowGrad = ctx.createRadialGradient(fcx, fcy - bh * 0.08, 10, fcx, fcy - bh * 0.08, frx * 0.85);
+            glowGrad.addColorStop(0, `rgba(255, 255, 255, ${0.16 * smoothingIntensity})`);
+            glowGrad.addColorStop(0.65, `rgba(255, 255, 255, ${0.06 * smoothingIntensity})`);
+            glowGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = glowGrad;
+            ctx.beginPath();
+            ctx.ellipse(fcx, fcy - bh * 0.08, frx * 0.85, fry * 0.75, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // B. Cheek Blush & Highlighting
+          if (layers.cosmeticMakeup) {
+            const blushRadius = Math.max(24, bw * 0.16);
+            ctx.save();
+            ctx.globalCompositeOperation = 'soft-light';
+            const blushColor = activeLens.blushColor;
+
+            if (activeLens.id === 'sunset_blush') {
+              const noseBlushY = noseY - 12;
+              const wGrad = ctx.createRadialGradient(noseX, noseBlushY, 4, noseX, noseBlushY, bw * 0.38);
+              wGrad.addColorStop(0, hexToRgba(blushColor, 0.45 * smoothingIntensity));
+              wGrad.addColorStop(0.70, hexToRgba(blushColor, 0.22 * smoothingIntensity));
+              wGrad.addColorStop(1, hexToRgba(blushColor, 0));
+              ctx.fillStyle = wGrad;
+              ctx.beginPath();
+              ctx.ellipse(noseX, noseBlushY, bw * 0.40, bh * 0.11, 0, 0, Math.PI * 2);
+              ctx.fill();
+            } else {
+              const bAlpha = 0.48 * smoothingIntensity;
+              const blushGrad1 = ctx.createRadialGradient(blX1, blY1, 2, blX1, blY1, blushRadius);
+              blushGrad1.addColorStop(0, hexToRgba(blushColor, bAlpha));
+              blushGrad1.addColorStop(0.65, hexToRgba(blushColor, bAlpha * 0.45));
+              blushGrad1.addColorStop(1, hexToRgba(blushColor, 0));
+              ctx.fillStyle = blushGrad1;
+              ctx.beginPath();
+              ctx.arc(blX1, blY1, blushRadius, 0, Math.PI * 2);
+              ctx.fill();
+
+              const blushGrad2 = ctx.createRadialGradient(blX2, blY2, 2, blX2, blY2, blushRadius);
+              blushGrad2.addColorStop(0, hexToRgba(blushColor, bAlpha));
+              blushGrad2.addColorStop(0.65, hexToRgba(blushColor, bAlpha * 0.45));
+              blushGrad2.addColorStop(1, hexToRgba(blushColor, 0));
+              ctx.fillStyle = blushGrad2;
+              ctx.beginPath();
+              ctx.arc(blX2, blY2, blushRadius, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+
+            // Cheekbone Highlighter
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            const hlColor = activeLens.highlighterColor;
+
+            const hlGrad1 = ctx.createRadialGradient(blX1 - 2, blY1 - bh * 0.04, 1, blX1 - 2, blY1 - bh * 0.04, blushRadius * 0.7);
+            hlGrad1.addColorStop(0, hexToRgba(hlColor, 0.60 * smoothingIntensity));
+            hlGrad1.addColorStop(0.5, hexToRgba(hlColor, 0.22 * smoothingIntensity));
+            hlGrad1.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = hlGrad1;
+            ctx.beginPath();
+            ctx.ellipse(blX1 - 2, blY1 - bh * 0.04, blushRadius * 0.65, blushRadius * 0.32, -0.22, 0, Math.PI * 2);
+            ctx.fill();
+
+            const hlGrad2 = ctx.createRadialGradient(blX2 + 2, blY2 - bh * 0.04, 1, blX2 + 2, blY2 - bh * 0.04, blushRadius * 0.7);
+            hlGrad2.addColorStop(0, hexToRgba(hlColor, 0.60 * smoothingIntensity));
+            hlGrad2.addColorStop(0.5, hexToRgba(hlColor, 0.22 * smoothingIntensity));
+            hlGrad2.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = hlGrad2;
+            ctx.beginPath();
+            ctx.ellipse(blX2 + 2, blY2 - bh * 0.04, blushRadius * 0.65, blushRadius * 0.32, 0.22, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (activeLens.hasNoseHighlight) {
+              const noseGrad = ctx.createRadialGradient(noseX, noseY, 1, noseX, noseY, 8);
+              noseGrad.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+              noseGrad.addColorStop(0.5, hexToRgba(hlColor, 0.40));
+              noseGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+              ctx.fillStyle = noseGrad;
+              ctx.beginPath();
+              ctx.arc(noseX, noseY, 6.5, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+
+            // Lashes & Eyeliner
+            if (activeLens.hasLashes || activeLens.hasEyeliner) {
+              const eyeW = Math.max(22, bw * 0.17);
+              const eyeH = Math.max(10, bh * 0.09);
+              drawSnapchatEyelashes(ctx, lex, ley, eyeW, eyeH, true);
+              drawSnapchatEyelashes(ctx, rex, rey, eyeW, eyeH, false);
+            }
+
+            // Cheek Star Sparkles
+            if (activeLens.hasCheekSparkles) {
+              drawStarSparkle(ctx, blX1 - 12, blY1 - 8, 4.2, '#ffffff');
+              drawStarSparkle(ctx, blX1 + 10, blY1 + 10, 3.2, '#ffffff');
+              drawStarSparkle(ctx, blX2 + 12, blY2 - 8, 4.2, '#ffffff');
+              drawStarSparkle(ctx, blX2 - 10, blY2 + 10, 3.2, '#ffffff');
+            }
+
+            // Plump Glossy Lips
+            const mx = (lmk.mouthCenter.x / 100) * cw;
+            const my = (lmk.mouthCenter.y / 100) * ch;
+            const mw = Math.max(26, (lmk.mouthBounds.width / 100) * cw);
+            const mh = Math.max(11, (lmk.mouthBounds.height / 100) * ch);
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'multiply';
+            const lipGrad = ctx.createRadialGradient(mx, my, 2, mx, my, mw * 0.55);
+            lipGrad.addColorStop(0, hexToRgba(selectedLip, 0.82));
+            lipGrad.addColorStop(0.7, hexToRgba(selectedLip, 0.56));
+            lipGrad.addColorStop(1, hexToRgba(selectedLip, 0.15));
+            ctx.fillStyle = lipGrad;
+            ctx.beginPath();
+            ctx.ellipse(mx, my, mw * 0.53, mh * 0.60, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalCompositeOperation = 'screen';
+            const glossGrad = ctx.createRadialGradient(mx, my + mh * 0.12, 1, mx, my + mh * 0.12, mw * 0.36);
+            glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+            glossGrad.addColorStop(0.6, 'rgba(255, 255, 255, 0.18)');
+            glossGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = glossGrad;
+            ctx.beginPath();
+            ctx.ellipse(mx, my + mh * 0.12, mw * 0.34, mh * 0.28, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // Floating Sparkle Particles
+          if (activeLens.hasFloatingParticles) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            const pColor = activeLens.particleColor || '#fef08a';
+            for (const p of particlesRef.current) {
+              p.angle += p.speed;
+              const px = fcx + Math.cos(p.angle) * (frx * p.distRatio);
+              const py = fcy + Math.sin(p.angle) * (fry * p.distRatio);
+              const alpha = Math.max(0.18, 0.55 + 0.45 * Math.sin(tick * 3 + p.phase));
+
+              if (p.type === 'star') {
+                drawStarSparkle(ctx, px, py, p.size, hexToRgba(pColor, alpha));
+              } else if (p.type === 'diamond') {
+                ctx.fillStyle = hexToRgba('#ffffff', alpha);
+                ctx.beginPath();
+                ctx.moveTo(px, py - p.size);
+                ctx.lineTo(px + p.size * 0.6, py);
+                ctx.lineTo(px, py + p.size);
+                ctx.lineTo(px - p.size * 0.6, py);
+                ctx.closePath();
+                ctx.fill();
+              } else {
+                const orbGrad = ctx.createRadialGradient(px, py, 1, px, py, p.size);
+                orbGrad.addColorStop(0, hexToRgba(pColor, alpha));
+                orbGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = orbGrad;
+                ctx.beginPath();
+                ctx.arc(px, py, p.size, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+            ctx.restore();
+          }
+
+        // ====================================================================
+        // OPTION 2: YOUCAM CLINICAL HEATMAP SCANNER (Clinical-grade scanner)
+        // ====================================================================
+        } else if (studioMode === 'clinical_scanner') {
           ctx.save();
-          // Feathered foundation tone wash with soft-light blend
+          ctx.globalCompositeOperation = 'screen';
+
+          // 1. Erythema / Redness Heatmap Patches on cheeks
+          const redGrad1 = ctx.createRadialGradient(blX1, blY1, 2, blX1, blY1, bw * 0.18);
+          redGrad1.addColorStop(0, 'rgba(239, 68, 68, 0.60)');
+          redGrad1.addColorStop(0.5, 'rgba(249, 115, 22, 0.35)');
+          redGrad1.addColorStop(1, 'rgba(239, 68, 68, 0)');
+          ctx.fillStyle = redGrad1;
+          ctx.beginPath();
+          ctx.arc(blX1, blY1, bw * 0.18, 0, Math.PI * 2);
+          ctx.fill();
+
+          const redGrad2 = ctx.createRadialGradient(blX2, blY2, 2, blX2, blY2, bw * 0.18);
+          redGrad2.addColorStop(0, 'rgba(239, 68, 68, 0.60)');
+          redGrad2.addColorStop(0.5, 'rgba(249, 115, 22, 0.35)');
+          redGrad2.addColorStop(1, 'rgba(239, 68, 68, 0)');
+          ctx.fillStyle = redGrad2;
+          ctx.beginPath();
+          ctx.arc(blX2, blY2, bw * 0.18, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 2. Pore Density Heatmap on nose bridge & T-zone
+          ctx.fillStyle = 'rgba(234, 179, 8, 0.85)';
+          for (let i = 0; i < 20; i++) {
+            const angle = (i / 20) * Math.PI * 2;
+            const dist = (i % 3 + 1) * 5.5;
+            const px = noseX + Math.cos(angle) * dist;
+            const py = noseY - 8 + Math.sin(angle) * dist * 0.7;
+            ctx.beginPath();
+            ctx.arc(px, py, 1.8, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // 3. Dark Circles under eyes
+          const darkGrad1 = ctx.createRadialGradient(lex, ley + 12, 1, lex, ley + 12, bw * 0.15);
+          darkGrad1.addColorStop(0, 'rgba(99, 102, 241, 0.55)');
+          darkGrad1.addColorStop(1, 'rgba(99, 102, 241, 0)');
+          ctx.fillStyle = darkGrad1;
+          ctx.beginPath();
+          ctx.ellipse(lex, ley + 12, bw * 0.15, bh * 0.05, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          const darkGrad2 = ctx.createRadialGradient(rex, rey + 12, 1, rex, rey + 12, bw * 0.15);
+          darkGrad2.addColorStop(0, 'rgba(99, 102, 241, 0.55)');
+          darkGrad2.addColorStop(1, 'rgba(99, 102, 241, 0)');
+          ctx.fillStyle = darkGrad2;
+          ctx.beginPath();
+          ctx.ellipse(rex, rey + 12, bw * 0.15, bh * 0.05, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 4. Clinical Targeted Crosshair over Active Blemish
+          const targetX = blX1 + 10;
+          const targetY = blY1 - 14;
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.arc(targetX, targetY, 11 + Math.sin(tick * 5) * 2, 0, Math.PI * 2);
+          ctx.moveTo(targetX - 16, targetY);
+          ctx.lineTo(targetX + 16, targetY);
+          ctx.moveTo(targetX, targetY - 16);
+          ctx.lineTo(targetX, targetY + 16);
+          ctx.stroke();
+
+          // HUD Medical Telemetry Callout
+          ctx.fillStyle = '#ef4444';
+          ctx.font = 'bold 9px monospace';
+          ctx.fillText('ERYTHEMA CLUSTER', targetX + 18, targetY - 4);
+          ctx.fillText('SEBUM: 72%', targetX + 18, targetY + 8);
+
+          ctx.restore();
+
+        // ====================================================================
+        // OPTION 3: CHRONOSKIN 30-DAY PROGRESS RECOVERY SIMULATOR
+        // ====================================================================
+        } else if (studioMode === 'chronoskin_forecast') {
+          const progress = Math.max(0, Math.min(1, (chronoSkinDay - 1) / 29)); // 0.0 to 1.0
+
+          ctx.save();
+          // Progressive skin healing and porcelain tone smoothing
+          const healSmoothing = 0.35 + progress * 0.62;
           ctx.globalCompositeOperation = 'soft-light';
-          const foundGrad = ctx.createRadialGradient(fcx, fcy, 12, fcx, fcy, Math.max(frx, fry));
-          const fAlpha = 0.55 * smoothingIntensity;
-          foundGrad.addColorStop(0, hexToRgba(selectedFoundation, fAlpha));
-          foundGrad.addColorStop(0.70, hexToRgba(selectedFoundation, fAlpha * 0.65));
-          foundGrad.addColorStop(1, hexToRgba(selectedFoundation, 0));
-          ctx.fillStyle = foundGrad;
+          const skinGrad = ctx.createRadialGradient(fcx, fcy, 12, fcx, fcy, Math.max(frx, fry));
+          skinGrad.addColorStop(0, hexToRgba('#e8be99', 0.52 * healSmoothing));
+          skinGrad.addColorStop(0.70, hexToRgba('#e8be99', 0.30 * healSmoothing));
+          skinGrad.addColorStop(1, 'rgba(232, 190, 153, 0)');
+          ctx.fillStyle = skinGrad;
           ctx.beginPath();
           ctx.ellipse(fcx, fcy, frx, fry, 0, 0, Math.PI * 2);
           ctx.fill();
 
-          // Luminous inner-face T-zone radiance
-          const glowGrad = ctx.createRadialGradient(fcx, fcy - bh * 0.08, 10, fcx, fcy - bh * 0.08, frx * 0.85);
-          glowGrad.addColorStop(0, `rgba(255, 255, 255, ${0.16 * smoothingIntensity})`);
-          glowGrad.addColorStop(0.65, `rgba(255, 255, 255, ${0.06 * smoothingIntensity})`);
-          glowGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-          ctx.fillStyle = glowGrad;
-          ctx.beginPath();
-          ctx.ellipse(fcx, fcy - bh * 0.08, frx * 0.85, fry * 0.75, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
-
-        // B. CHEEK BLUSH (Classic Diffused or Viral Sunset W-Blush)
-        if (layers.cosmeticMakeup) {
-          const blX1 = (lmk.leftCheek.x / 100) * cw;
-          const blY1 = (lmk.leftCheek.y / 100) * ch;
-          const blX2 = (lmk.rightCheek.x / 100) * cw;
-          const blY2 = (lmk.rightCheek.y / 100) * ch;
-          const blushRadius = Math.max(24, bw * 0.16);
-
-          ctx.save();
-          ctx.globalCompositeOperation = 'soft-light';
-          const blushColor = activeLens.blushColor;
-
-          if (activeLens.id === 'sunset_blush') {
-            // Sunset Blush: horizontal gradient wash connecting cheeks across nose bridge
-            const noseX = (lmk.noseTip.x / 100) * cw;
-            const noseY = (lmk.noseTip.y / 100) * ch - 12;
-            const wGrad = ctx.createRadialGradient(noseX, noseY, 4, noseX, noseY, bw * 0.38);
-            wGrad.addColorStop(0, hexToRgba(blushColor, 0.45 * smoothingIntensity));
-            wGrad.addColorStop(0.70, hexToRgba(blushColor, 0.22 * smoothingIntensity));
-            wGrad.addColorStop(1, hexToRgba(blushColor, 0));
-            ctx.fillStyle = wGrad;
+          // Residual Blemishes (fades out as Day 30 approaches)
+          const residualRedness = 1.0 - progress * 0.88;
+          if (residualRedness > 0.06) {
+            const redG1 = ctx.createRadialGradient(blX1, blY1, 2, blX1, blY1, bw * 0.16);
+            redG1.addColorStop(0, `rgba(239, 68, 68, ${0.45 * residualRedness})`);
+            redG1.addColorStop(1, 'rgba(239, 68, 68, 0)');
+            ctx.fillStyle = redG1;
             ctx.beginPath();
-            ctx.ellipse(noseX, noseY, bw * 0.40, bh * 0.11, 0, 0, Math.PI * 2);
-            ctx.fill();
-          } else {
-            // Standard diffused cheek blush apples
-            const bAlpha = 0.48 * smoothingIntensity;
-            const blushGrad1 = ctx.createRadialGradient(blX1, blY1, 2, blX1, blY1, blushRadius);
-            blushGrad1.addColorStop(0, hexToRgba(blushColor, bAlpha));
-            blushGrad1.addColorStop(0.65, hexToRgba(blushColor, bAlpha * 0.45));
-            blushGrad1.addColorStop(1, hexToRgba(blushColor, 0));
-            ctx.fillStyle = blushGrad1;
-            ctx.beginPath();
-            ctx.arc(blX1, blY1, blushRadius, 0, Math.PI * 2);
+            ctx.arc(blX1, blY1, bw * 0.16, 0, Math.PI * 2);
             ctx.fill();
 
-            const blushGrad2 = ctx.createRadialGradient(blX2, blY2, 2, blX2, blY2, blushRadius);
-            blushGrad2.addColorStop(0, hexToRgba(blushColor, bAlpha));
-            blushGrad2.addColorStop(0.65, hexToRgba(blushColor, bAlpha * 0.45));
-            blushGrad2.addColorStop(1, hexToRgba(blushColor, 0));
-            ctx.fillStyle = blushGrad2;
+            const redG2 = ctx.createRadialGradient(blX2, blY2, 2, blX2, blY2, bw * 0.16);
+            redG2.addColorStop(0, `rgba(239, 68, 68, ${0.45 * residualRedness})`);
+            redG2.addColorStop(1, 'rgba(239, 68, 68, 0)');
+            ctx.fillStyle = redG2;
             ctx.beginPath();
-            ctx.arc(blX2, blY2, blushRadius, 0, Math.PI * 2);
+            ctx.arc(blX2, blY2, bw * 0.16, 0, Math.PI * 2);
             ctx.fill();
           }
-          ctx.restore();
 
-          // C. CHEEKBONE & NOSE TIP HIGHLIGHTER
-          ctx.save();
-          ctx.globalCompositeOperation = 'screen';
-          const hlColor = activeLens.highlighterColor;
-
-          // Left Cheekbone Highlighter Crescent
-          const hlGrad1 = ctx.createRadialGradient(blX1 - 2, blY1 - bh * 0.04, 1, blX1 - 2, blY1 - bh * 0.04, blushRadius * 0.7);
-          hlGrad1.addColorStop(0, hexToRgba(hlColor, 0.60 * smoothingIntensity));
-          hlGrad1.addColorStop(0.5, hexToRgba(hlColor, 0.22 * smoothingIntensity));
-          hlGrad1.addColorStop(1, 'rgba(255, 255, 255, 0)');
-          ctx.fillStyle = hlGrad1;
-          ctx.beginPath();
-          ctx.ellipse(blX1 - 2, blY1 - bh * 0.04, blushRadius * 0.65, blushRadius * 0.32, -0.22, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Right Cheekbone Highlighter Crescent
-          const hlGrad2 = ctx.createRadialGradient(blX2 + 2, blY2 - bh * 0.04, 1, blX2 + 2, blY2 - bh * 0.04, blushRadius * 0.7);
-          hlGrad2.addColorStop(0, hexToRgba(hlColor, 0.60 * smoothingIntensity));
-          hlGrad2.addColorStop(0.5, hexToRgba(hlColor, 0.22 * smoothingIntensity));
-          hlGrad2.addColorStop(1, 'rgba(255, 255, 255, 0)');
-          ctx.fillStyle = hlGrad2;
-          ctx.beginPath();
-          ctx.ellipse(blX2 + 2, blY2 - bh * 0.04, blushRadius * 0.65, blushRadius * 0.32, 0.22, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Cute Pearl Nose Tip Highlighter
-          if (activeLens.hasNoseHighlight) {
-            const noseX = (lmk.noseTip.x / 100) * cw;
-            const noseY = (lmk.noseTip.y / 100) * ch;
-            const noseGrad = ctx.createRadialGradient(noseX, noseY, 1, noseX, noseY, 8);
-            noseGrad.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
-            noseGrad.addColorStop(0.5, hexToRgba(hlColor, 0.40));
-            noseGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-            ctx.fillStyle = noseGrad;
+          // Radiant Dewy Barrier Sheen (develops by Day 30)
+          if (progress > 0.3) {
+            ctx.globalCompositeOperation = 'screen';
+            const dewyGrad = ctx.createRadialGradient(fcx, fcy - 18, 10, fcx, fcy - 18, frx * 0.82);
+            dewyGrad.addColorStop(0, `rgba(255, 255, 255, ${0.24 * progress})`);
+            dewyGrad.addColorStop(0.70, `rgba(255, 255, 255, ${0.08 * progress})`);
+            dewyGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = dewyGrad;
             ctx.beginPath();
-            ctx.arc(noseX, noseY, 6.5, 0, Math.PI * 2);
+            ctx.ellipse(fcx, fcy - 18, frx * 0.82, fry * 0.72, 0, 0, Math.PI * 2);
             ctx.fill();
           }
-          ctx.restore();
 
-          // D. FLUTTERY EYELASHES & WINGED EYELINER
-          if (activeLens.hasLashes || activeLens.hasEyeliner) {
-            const eyeW = Math.max(22, bw * 0.17);
-            const eyeH = Math.max(10, bh * 0.09);
-            drawSnapchatEyelashes(ctx, lex, ley, eyeW, eyeH, true);
-            drawSnapchatEyelashes(ctx, rex, rey, eyeW, eyeH, false);
-          }
-
-          // E. CHEEK SPARKLES / STAR FRECKLES
-          if (activeLens.hasCheekSparkles) {
-            drawStarSparkle(ctx, blX1 - 12, blY1 - 8, 4.2, '#ffffff');
-            drawStarSparkle(ctx, blX1 + 10, blY1 + 10, 3.2, '#ffffff');
-            drawStarSparkle(ctx, blX2 + 12, blY2 - 8, 4.2, '#ffffff');
-            drawStarSparkle(ctx, blX2 - 10, blY2 + 10, 3.2, '#ffffff');
-          }
-
-          // F. PLUMP GLOSSY LIPS WITH 3D SPECULAR HIGHLIGHT
-          const mx = (lmk.mouthCenter.x / 100) * cw;
-          const my = (lmk.mouthCenter.y / 100) * ch;
-          const mw = Math.max(26, (lmk.mouthBounds.width / 100) * cw);
-          const mh = Math.max(11, (lmk.mouthBounds.height / 100) * ch);
-
-          ctx.save();
-          // Rich pigment with multiply blend
-          ctx.globalCompositeOperation = 'multiply';
-          const lipGrad = ctx.createRadialGradient(mx, my, 2, mx, my, mw * 0.55);
-          lipGrad.addColorStop(0, hexToRgba(selectedLip, 0.82));
-          lipGrad.addColorStop(0.7, hexToRgba(selectedLip, 0.56));
-          lipGrad.addColorStop(1, hexToRgba(selectedLip, 0.15));
-          ctx.fillStyle = lipGrad;
-          ctx.beginPath();
-          ctx.ellipse(mx, my, mw * 0.53, mh * 0.60, 0, 0, Math.PI * 2);
-          ctx.fill();
-
-          // Juicy lip gloss specular reflection
-          ctx.globalCompositeOperation = 'screen';
-          const glossGrad = ctx.createRadialGradient(mx, my + mh * 0.12, 1, mx, my + mh * 0.12, mw * 0.36);
-          glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
-          glossGrad.addColorStop(0.6, 'rgba(255, 255, 255, 0.18)');
-          glossGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-          ctx.fillStyle = glossGrad;
-          ctx.beginPath();
-          ctx.ellipse(mx, my + mh * 0.12, mw * 0.34, mh * 0.28, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
-
-        // G. FLOATING AR STARDUST / SPARKLE HALO
-        if (activeLens.hasFloatingParticles) {
-          ctx.save();
-          ctx.globalCompositeOperation = 'screen';
-          const pColor = activeLens.particleColor || '#fef08a';
-          for (const p of particlesRef.current) {
-            p.angle += p.speed;
-            const px = fcx + Math.cos(p.angle) * (frx * p.distRatio);
-            const py = fcy + Math.sin(p.angle) * (fry * p.distRatio);
-            const alpha = Math.max(0.18, 0.55 + 0.45 * Math.sin(tick * 3 + p.phase));
-
-            if (p.type === 'star') {
-              drawStarSparkle(ctx, px, py, p.size, hexToRgba(pColor, alpha));
-            } else if (p.type === 'diamond') {
-              ctx.fillStyle = hexToRgba('#ffffff', alpha);
-              ctx.beginPath();
-              ctx.moveTo(px, py - p.size);
-              ctx.lineTo(px + p.size * 0.6, py);
-              ctx.lineTo(px, py + p.size);
-              ctx.lineTo(px - p.size * 0.6, py);
-              ctx.closePath();
-              ctx.fill();
-            } else {
-              const orbGrad = ctx.createRadialGradient(px, py, 1, px, py, p.size);
-              orbGrad.addColorStop(0, hexToRgba(pColor, alpha));
-              orbGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-              ctx.fillStyle = orbGrad;
-              ctx.beginPath();
-              ctx.arc(px, py, p.size, 0, Math.PI * 2);
-              ctx.fill();
-            }
-          }
           ctx.restore();
         }
 
         ctx.restore();
       }
 
-      // 4. CYBER AURA NEON MESH (Only when Cyber Aura lens or Mesh toggle is on)
-      if (layers.diagnosticMesh || activeLens.id === 'cyber_aura') {
+      // 4. CYBER AURA NEON MESH
+      if (layers.diagnosticMesh || (studioMode === 'snapchat_beauty' && activeLens.id === 'cyber_aura')) {
         ctx.save();
         if (!isFullSnap) {
           ctx.beginPath();
@@ -860,7 +986,6 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         const chx = (lmk.chin.x / 100) * cw;
         const chy = (lmk.chin.y / 100) * ch;
 
-        // Glowing neon triangulation lines
         ctx.strokeStyle = activeLens.id === 'cyber_aura' ? '#22d3ee' : '#06b6d4';
         ctx.lineWidth = 1.4;
         ctx.shadowColor = '#06b6d4';
@@ -884,7 +1009,6 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         ctx.lineTo(chx, chy);
         ctx.stroke();
 
-        // Glowing Cyber Nodes
         ctx.fillStyle = '#ec4899';
         ctx.shadowColor = '#ec4899';
         ctx.shadowBlur = 8;
@@ -898,7 +1022,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         ctx.restore();
       }
 
-      // 5. DRAW BEFORE/AFTER SPLIT SLIDER (Only in split_compare mode)
+      // 5. BEFORE/AFTER SPLIT SLIDER (Only in split_compare mode)
       if (!isFullSnap) {
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 2.5;
@@ -909,7 +1033,6 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         ctx.lineTo(splitX, ch);
         ctx.stroke();
 
-        // Drag Handle Circle
         ctx.fillStyle = '#0f172a';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -917,7 +1040,6 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         ctx.fill();
         ctx.stroke();
 
-        // Inner Icon
         ctx.fillStyle = '#ffffff';
         ctx.font = '10px sans-serif';
         ctx.textAlign = 'center';
@@ -925,7 +1047,6 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         ctx.fillText('↔', splitX, ch * 0.5);
       }
 
-      // Loop frame
       animFrameRef.current = requestAnimationFrame(renderMotionFrame);
     };
 
@@ -938,6 +1059,8 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
   }, [
     activeMode,
     isWebcamActive,
+    studioMode,
+    chronoSkinDay,
     viewMode,
     activeLensId,
     sliderPos,
@@ -952,16 +1075,13 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
     const canvas = motionCanvasRef.current;
     if (!canvas) return;
 
-    // Flash animation and shutter sound
     setIsFlashing(true);
     playShutterSound();
     setTimeout(() => setIsFlashing(false), 150);
 
-    // Capture still JPEG data URL
     const photoUrl = canvas.toDataURL('image/jpeg', 0.95);
     setSnappedPhotos(prev => [photoUrl, ...prev.slice(0, 4)]);
 
-    // Trigger full diagnostic and formulation cascade with captured picture
     if (liveFace) {
       const engine = FaceDetectionEngine.getInstance();
       const diagnostics = engine.generateSkinScoresFromDetection(liveFace, 'acne');
@@ -969,6 +1089,109 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         onCaptureSnapshot(photoUrl, liveFace, diagnostics);
       }
     }
+  };
+
+  // EXPORT CLINICAL PRESCRIPTION & AR LOOK SUMMARY CARD
+  const handleDownloadRxCard = () => {
+    const canvas = motionCanvasRef.current;
+    if (!canvas) return;
+
+    const cardCanvas = document.createElement('canvas');
+    cardCanvas.width = 600;
+    cardCanvas.height = 760;
+    const cctx = cardCanvas.getContext('2d');
+    if (!cctx) return;
+
+    // Card background
+    cctx.fillStyle = '#090d16';
+    cctx.fillRect(0, 0, 600, 760);
+
+    // Decorative gradient banner
+    const headGrad = cctx.createLinearGradient(0, 0, 600, 100);
+    headGrad.addColorStop(0, '#ec4899');
+    headGrad.addColorStop(1, '#8b5cf6');
+    cctx.fillStyle = headGrad;
+    cctx.fillRect(0, 0, 600, 8);
+
+    // Card Header
+    cctx.fillStyle = '#ffffff';
+    cctx.font = 'bold 20px sans-serif';
+    cctx.fillText('AuraMesh AI — Clinical Dermatology & AR Prescription', 25, 45);
+
+    cctx.fillStyle = '#94a3b8';
+    cctx.font = '12px sans-serif';
+    cctx.fillText(`Session ID: ${liveFace ? 'YOUCAM-AR-' + Math.round(liveFace.confidence * 99999) : 'YOUCAM-AR-9921'}  •  Date: ${new Date().toLocaleDateString()}`, 25, 68);
+
+    // Embedded Captured Face Image
+    cctx.drawImage(canvas, 25, 90, 260, 260);
+
+    // Clinical Metrics Panel
+    cctx.fillStyle = '#0f172a';
+    cctx.fillRect(305, 90, 270, 260);
+    cctx.strokeStyle = '#334155';
+    cctx.lineWidth = 1;
+    cctx.strokeRect(305, 90, 270, 260);
+
+    cctx.fillStyle = '#f43f5e';
+    cctx.font = 'bold 14px sans-serif';
+    cctx.fillText('YouCam Skin Diagnostics', 320, 120);
+
+    const metrics = [
+      { label: 'Fitzpatrick Phototype', val: `Type ${liveFace?.metrics.fitzpatrickScale || 3}` },
+      { label: 'Skin Undertone', val: (liveFace?.metrics.detectedUndertone || 'Olive').toUpperCase() },
+      { label: 'ITA Angle Colorimetry', val: `${Math.round(liveFace?.metrics.itaAngle || 36)}°` },
+      { label: 'Biological Skin Age', val: '26 Yrs' },
+      { label: 'Barrier Health', val: 'Sensitized (Target: Resilient)' },
+      { label: 'Active AR Look', val: activeLens.name }
+    ];
+
+    metrics.forEach((m, idx) => {
+      const my = 150 + idx * 30;
+      cctx.fillStyle = '#94a3b8';
+      cctx.font = '11px sans-serif';
+      cctx.fillText(m.label, 320, my);
+      cctx.fillStyle = '#e2e8f0';
+      cctx.font = 'bold 11px sans-serif';
+      cctx.fillText(m.val, 460, my);
+    });
+
+    // Lower Half: Regimen & Pharmacology Action
+    cctx.fillStyle = '#1e293b';
+    cctx.fillRect(25, 375, 550, 320);
+    cctx.strokeStyle = '#334155';
+    cctx.strokeRect(25, 375, 550, 320);
+
+    cctx.fillStyle = '#38bdf8';
+    cctx.font = 'bold 14px sans-serif';
+    cctx.fillText('Autonomous Regimen & Safety Formulation', 45, 410);
+
+    const steps = [
+      { phase: 'AM Routine:', desc: 'Calming Ceramide Water-Gel Cleanser + 10% Azelaic Acid + SPF 50+ Hybrid Fluid' },
+      { phase: 'PM Routine:', desc: 'Bio-equivalent Bakuchiol 2.0% Peptide Dupe (Substituted for Retinal, saving $18)' },
+      { phase: 'Vehicle Constraint:', desc: 'Pharmacology Agent mandated oil-free lightweight vehicle to prevent breakout' },
+      { phase: 'VTO Color Harmony:', desc: `Foundation: ${selectedFoundation}  •  Lip Tint: ${selectedLip}` }
+    ];
+
+    steps.forEach((s, idx) => {
+      const sy = 445 + idx * 45;
+      cctx.fillStyle = '#f59e0b';
+      cctx.font = 'bold 12px sans-serif';
+      cctx.fillText(s.phase, 45, sy);
+      cctx.fillStyle = '#cbd5e1';
+      cctx.font = '11px sans-serif';
+      cctx.fillText(s.desc, 45, sy + 18);
+    });
+
+    // Footer
+    cctx.fillStyle = '#64748b';
+    cctx.font = '10px monospace';
+    cctx.fillText('Powered by Perfect Corp YouCam API  •  https://github.com/yuvanshankarm007/AuraMesh', 25, 730);
+
+    // Download PNG
+    const link = document.createElement('a');
+    link.download = `AuraMesh-Clinical-Prescription-${Date.now()}.png`;
+    link.href = cardCanvas.toDataURL('image/png');
+    link.click();
   };
 
   const getLightingFilter = () => {
@@ -990,46 +1213,77 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
       {/* Hidden Video for Webcam Stream */}
       <video ref={videoRef} autoPlay playsInline muted className="hidden" />
 
-      {/* Top Header: Title, Mode & Snapchat AR Controls */}
+      {/* Top Header: Title, Studio Mode & Camera Controls */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-800 flex-wrap gap-2">
         <div className="flex items-center space-x-2">
           <Sparkles className="w-4 h-4 text-pink-400 animate-pulse" />
-          <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-1.5">
-            <span>YouCam Snapchat AR Studio</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/20 text-pink-300 font-mono font-bold border border-pink-500/30">
-              {activeLens.emoji} {activeLens.name}
-            </span>
+          <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+            <span>YouCam AR & Clinical Intelligence Studio</span>
           </h3>
         </div>
 
-        {/* View Mode Toggle: Snapchat Full AR vs Split Comparison */}
+        {/* Studio 3-Way Mode Switcher: Snapchat Beauty vs Clinical Heatmap vs ChronoSkin */}
+        <div className="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <button
+            onClick={() => setStudioMode('snapchat_beauty')}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              studioMode === 'snapchat_beauty'
+                ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Snapchat Beauty</span>
+          </button>
+          <button
+            onClick={() => setStudioMode('clinical_scanner')}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              studioMode === 'clinical_scanner'
+                ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40 font-bold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5" />
+            <span>Clinical Heatmap</span>
+          </button>
+          <button
+            onClick={() => setStudioMode('chronoskin_forecast')}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              studioMode === 'chronoskin_forecast'
+                ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 font-bold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>30-Day Recovery</span>
+          </button>
+        </div>
+
+        {/* View Mode & Camera Source Controls */}
         <div className="flex items-center space-x-1.5">
           <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
             <button
               onClick={() => setViewMode('snap_full')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                 viewMode === 'snap_full'
-                  ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-sm'
+                  ? 'bg-slate-800 text-pink-300'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Snapchat AR</span>
+              Full AR
             </button>
             <button
               onClick={() => setViewMode('split_compare')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                 viewMode === 'split_compare'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                  ? 'bg-cyan-500/20 text-cyan-300'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Sliders className="w-3.5 h-3.5" />
-              <span>Split Compare</span>
+              Split
             </button>
           </div>
 
-          {/* Camera Feed Mode */}
           <div className="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
             <button
               onClick={() => handleSelectMode('motion_webcam')}
@@ -1082,7 +1336,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
               }`}
             />
 
-            {/* LIVE AR VIEWPORT (Universal Canvas for Webcam, Demo Motion & Still Photo) */}
+            {/* LIVE AR VIEWPORT */}
             <canvas
               ref={motionCanvasRef}
               className="w-full h-full object-cover"
@@ -1107,9 +1361,9 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
               <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-6 text-center space-y-3">
                 <Video className="w-10 h-10 text-pink-400 animate-pulse" />
                 <div>
-                  <h4 className="text-sm font-bold text-slate-100">Ready for Live Snapchat AR Try-On</h4>
+                  <h4 className="text-sm font-bold text-slate-100">Ready for Live AR Try-On</h4>
                   <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                    Turn on your camera to experience real-time airbrushed skin, winged lashes, glossy lips, and floating sparkles.
+                    Turn on your camera to experience real-time airbrushed skin, clinical heatmaps, and 30-day recovery forecasts.
                   </p>
                 </div>
                 <button
@@ -1148,45 +1402,140 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
             </div>
 
             <span className="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-pink-500 to-rose-500 px-2.5 py-0.5 rounded-full text-white pointer-events-none flex items-center gap-1 shadow-md">
-              <Sparkles className="w-2.5 h-2.5" />
-              Snapchat AR
+              {studioMode === 'snapchat_beauty' ? (
+                <>
+                  <Sparkles className="w-2.5 h-2.5" />
+                  {activeLens.name}
+                </>
+              ) : studioMode === 'clinical_scanner' ? (
+                <>
+                  <Activity className="w-2.5 h-2.5 text-rose-300" />
+                  YouCam Heatmap
+                </>
+              ) : (
+                <>
+                  <Clock className="w-2.5 h-2.5 text-cyan-300" />
+                  Day {chronoSkinDay} Forecast
+                </>
+              )}
             </span>
           </div>
 
-          {/* SNAPCHAT LENSES HORIZONTAL CAROUSEL (The Iconic Snapchat Lens Switcher!) */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span className="font-semibold text-slate-300 flex items-center gap-1">
-                <Wand2 className="w-3.5 h-3.5 text-pink-400" /> Snapchat Lenses Carousel
-              </span>
-              <span className="text-[10px] text-pink-300 font-mono">Tap any lens to apply</span>
-            </div>
+          {/* DYNAMIC MODE CONTROLS */}
+          {studioMode === 'snapchat_beauty' && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span className="font-semibold text-slate-300 flex items-center gap-1">
+                  <Wand2 className="w-3.5 h-3.5 text-pink-400" /> Snapchat Lenses Carousel
+                </span>
+                <span className="text-[10px] text-pink-300 font-mono">Tap any lens to apply</span>
+              </div>
 
-            <div className="flex gap-2.5 overflow-x-auto pb-2 pt-1 scrollbar-thin">
-              {SNAPCHAT_LENSES.map((lens) => {
-                const isActive = lens.id === activeLensId;
-                return (
-                  <button
-                    key={lens.id}
-                    onClick={() => handleSelectLens(lens)}
-                    className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all shrink-0 w-20 border text-center ${
-                      isActive
-                        ? 'bg-pink-500/20 border-pink-500 text-white shadow-lg shadow-pink-500/20 scale-105 ring-2 ring-pink-400/50'
-                        : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className={`w-11 h-11 rounded-full flex items-center justify-center text-xl transition-all ${
-                      isActive ? 'bg-gradient-to-tr from-pink-500 to-rose-400 shadow-md scale-110' : 'bg-slate-900'
-                    }`}>
-                      {lens.emoji}
-                    </div>
-                    <span className="text-[10px] font-bold mt-1.5 truncate max-w-[70px]">{lens.name}</span>
-                  </button>
-                );
-              })}
+              <div className="flex gap-2.5 overflow-x-auto pb-2 pt-1 scrollbar-thin">
+                {SNAPCHAT_LENSES.map((lens) => {
+                  const isActive = lens.id === activeLensId;
+                  return (
+                    <button
+                      key={lens.id}
+                      onClick={() => handleSelectLens(lens)}
+                      className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all shrink-0 w-20 border text-center ${
+                        isActive
+                          ? 'bg-pink-500/20 border-pink-500 text-white shadow-lg shadow-pink-500/20 scale-105 ring-2 ring-pink-400/50'
+                          : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className={`w-11 h-11 rounded-full flex items-center justify-center text-xl transition-all ${
+                        isActive ? 'bg-gradient-to-tr from-pink-500 to-rose-400 shadow-md scale-110' : 'bg-slate-900'
+                      }`}>
+                        {lens.emoji}
+                      </div>
+                      <span className="text-[10px] font-bold mt-1.5 truncate max-w-[70px]">{lens.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400 italic px-1">{activeLens.tagline}</p>
             </div>
-            <p className="text-[11px] text-slate-400 italic px-1">{activeLens.tagline}</p>
-          </div>
+          )}
+
+          {studioMode === 'clinical_scanner' && (
+            <div className="bg-slate-950/70 border border-rose-500/30 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-rose-300 flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                  YouCam AI Clinical Concern Scanner
+                </span>
+                <span className="text-[10px] font-mono text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                  7-Vector Active
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-2 pt-1 text-center">
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Erythema</span>
+                  <span className="text-xs font-bold text-rose-400 font-mono">68/100</span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Pores</span>
+                  <span className="text-xs font-bold text-amber-400 font-mono">72/100</span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Dark Circles</span>
+                  <span className="text-xs font-bold text-indigo-400 font-mono">54/100</span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Acne Severity</span>
+                  <span className="text-xs font-bold text-red-400 font-mono">40/100</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {studioMode === 'chronoskin_forecast' && (
+            <div className="bg-slate-950/70 border border-cyan-500/30 rounded-xl p-3 space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-cyan-300 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                  ChronoSkin 30-Day Recovery Simulator
+                </span>
+                <span className="text-cyan-300 font-mono font-bold text-[11px]">
+                  Day {chronoSkinDay} of 30
+                </span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="30"
+                value={chronoSkinDay}
+                onChange={(e) => setChronoSkinDay(Number(e.target.value))}
+                className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+              />
+              <div className="flex justify-between text-[10px] text-slate-500">
+                <span>Day 1 (Baseline Sensitized)</span>
+                <span>Day 14 (Barrier Repair)</span>
+                <span>Day 30 (Glass Skin Healed)</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Predicted Acne</span>
+                  <span className="text-xs font-bold text-emerald-400 font-mono">
+                    {Math.round(40 - 32 * ((chronoSkinDay - 1) / 29))}/100
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Barrier Health</span>
+                  <span className="text-xs font-bold text-cyan-300 font-mono">
+                    {chronoSkinDay < 8 ? 'Sensitized' : chronoSkinDay < 22 ? 'Healing' : 'Resilient'}
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Skin Age</span>
+                  <span className="text-xs font-bold text-purple-300 font-mono">
+                    {Math.round(29 - 5 * ((chronoSkinDay - 1) / 29))} yrs
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Filmstrip of Snapped Pictures */}
           {snappedPhotos.length > 0 && (
@@ -1195,7 +1544,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
                 <span className="font-semibold text-slate-300 flex items-center gap-1">
                   <Camera className="w-3 h-3 text-pink-400" /> Snapped Pictures ({snappedPhotos.length})
                 </span>
-                <span className="text-[10px]">Click any photo to run full clinical diagnosis</span>
+                <span className="text-[10px]">Click photo to run clinical cascade</span>
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {snappedPhotos.map((photo, i) => (
@@ -1220,6 +1569,15 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
 
         {/* Right Side: Snapchat AR Customizer & Swatch Palette */}
         <div className="sm:col-span-5 space-y-4">
+          {/* Export Prescription & AR Look Button */}
+          <button
+            onClick={handleDownloadRxCard}
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-rose-500 hover:from-purple-600 hover:to-rose-600 text-white font-bold text-xs shadow-lg shadow-pink-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <Download className="w-4 h-4" />
+            <span>Download Clinical Rx & AR Card (PNG)</span>
+          </button>
+
           {/* Beauty Airbrush / Smoothing Slider */}
           <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-2">
             <div className="flex items-center justify-between text-xs">
@@ -1374,7 +1732,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
           <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-2.5 text-xs text-emerald-300/90 leading-relaxed flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
             <span>
-              <strong>YouCam Clinical Guard:</strong> All Snapchat AR looks are cross-verified with your skin barrier scores to prescribe non-comedogenic, oil-free clinical formulations.
+              <strong>YouCam Clinical Guard:</strong> All virtual looks and active ingredients are constrained by the Pharmacology Agent to be non-comedogenic and barrier-safe.
             </span>
           </div>
         </div>
