@@ -186,13 +186,14 @@ export class AgentEventBus {
     await Promise.allSettled(promises);
   }
 
-  public resetSession(goal?: string, budget?: number, userImage?: string) {
+  public resetSession(goal?: string, budget?: number, userImage?: string, faceDetection?: import('./types').FaceDetectionResult) {
     this.state = {
       sessionId: 'session_' + Math.random().toString(36).substring(2, 9),
       currentStep: 'IDLE',
       userGoal: goal || 'Clear acne and find non-comedogenic foundation under $55',
       maxBudget: budget !== undefined ? budget : 55,
       userImage: userImage || '',
+      faceDetection: faceDetection || undefined,
       executionSpeed: this.state.executionSpeed,
       negotiationRounds: 0,
       governance: {

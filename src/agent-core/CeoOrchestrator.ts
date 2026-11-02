@@ -7,9 +7,15 @@ export class CeoOrchestrator extends BaseAgent {
     super('agent.executive.ceo', 1, 'Chief Experience Orchestrator (CEO)', bus);
   }
 
-  public async startMission(userGoal: string, budget: number, userImage: string, personaDiagnostics?: any) {
-    this.bus.resetSession(userGoal, budget, userImage);
-    this.bus.updateState(() => ({ currentStep: 'ANALYZING' }));
+  public async startMission(
+    userGoal: string,
+    budget: number,
+    userImage: string,
+    personaDiagnostics?: any,
+    faceDetection?: import('./types').FaceDetectionResult
+  ) {
+    this.bus.resetSession(userGoal, budget, userImage, faceDetection);
+    this.bus.updateState(() => ({ currentStep: 'ANALYZING', faceDetection: faceDetection || undefined }));
 
     // Tier 1 -> Tier 2 Vertical Delegation
     await this.delegate(
@@ -20,7 +26,8 @@ export class CeoOrchestrator extends BaseAgent {
         userGoal,
         maxBudget: budget,
         userImage,
-        personaDiagnostics
+        personaDiagnostics,
+        faceDetection
       },
       `Executive Directive: Begin clinical skin analysis for goal "${userGoal}" with a strict budget ceiling of $${budget.toFixed(2)}.`
     );

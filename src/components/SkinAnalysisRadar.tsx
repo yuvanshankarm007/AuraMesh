@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { SkinDiagnosticScores } from '../agent-core/types';
-import { Activity, Clock } from 'lucide-react';
+import { SkinDiagnosticScores, FaceDetectionResult } from '../agent-core/types';
+import { Activity, Clock, Scan } from 'lucide-react';
 import { ChronoSkinProgress } from './ChronoSkinProgress';
 
 interface RadarProps {
   scores?: SkinDiagnosticScores;
   avatarUrl?: string;
+  faceDetection?: FaceDetectionResult;
 }
 
-const SkinAnalysisRadarComponent: React.FC<RadarProps> = ({ scores, avatarUrl }) => {
+const SkinAnalysisRadarComponent: React.FC<RadarProps> = ({ scores, avatarUrl, faceDetection }) => {
   const [activeTab, setActiveTab] = useState<'realtime' | 'chronoskin'>('realtime');
 
   if (!scores) {
@@ -77,7 +78,7 @@ const SkinAnalysisRadarComponent: React.FC<RadarProps> = ({ scores, avatarUrl })
         <ChronoSkinProgress scores={scores} avatarUrl={avatarUrl} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
-          {/* Face Thumbnail with Simulated Landmark Mesh */}
+          {/* Face Thumbnail with Simulated or Detected Landmark Mesh */}
           <div className="sm:col-span-4 relative group">
             <div className="relative rounded-xl overflow-hidden border border-slate-700 aspect-square">
               {avatarUrl && (
@@ -87,17 +88,35 @@ const SkinAnalysisRadarComponent: React.FC<RadarProps> = ({ scores, avatarUrl })
                   className="w-full h-full object-cover"
                 />
               )}
-              {/* SVG Landmark Overlay Simulation */}
-              <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-60">
-                <circle cx="35%" cy="40%" r="4" fill="#06b6d4" className="animate-pulse" />
-                <circle cx="65%" cy="40%" r="4" fill="#06b6d4" className="animate-pulse" />
-                <circle cx="50%" cy="55%" r="3" fill="#10b981" />
-                <path d="M 38 70 Q 50 78 62 70" fill="none" stroke="#ec4899" strokeWidth="2" />
-                <ellipse cx="50%" cy="50%" rx="35%" ry="45%" fill="none" stroke="#06b6d4" strokeDasharray="3 3" strokeWidth="1" />
-              </svg>
+              {/* Dynamic Landmark Overlay */}
+              {faceDetection?.detected ? (
+                <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-75">
+                  <polyline
+                    points={`${faceDetection.landmarks.forehead.x}%,${faceDetection.landmarks.forehead.y}% ${faceDetection.landmarks.leftEye.x}%,${faceDetection.landmarks.leftEye.y}% ${faceDetection.landmarks.noseTip.x}%,${faceDetection.landmarks.noseTip.y}% ${faceDetection.landmarks.rightEye.x}%,${faceDetection.landmarks.rightEye.y}% ${faceDetection.landmarks.forehead.x}%,${faceDetection.landmarks.forehead.y}%`}
+                    fill="none"
+                    stroke="#06b6d4"
+                    strokeWidth="1.2"
+                    strokeDasharray="2 2"
+                  />
+                  <circle cx={`${faceDetection.landmarks.leftEye.x}%`} cy={`${faceDetection.landmarks.leftEye.y}%`} r="3.5" fill="#06b6d4" />
+                  <circle cx={`${faceDetection.landmarks.rightEye.x}%`} cy={`${faceDetection.landmarks.rightEye.y}%`} r="3.5" fill="#06b6d4" />
+                  <circle cx={`${faceDetection.landmarks.noseTip.x}%`} cy={`${faceDetection.landmarks.noseTip.y}%`} r="3" fill="#10b981" />
+                  <circle cx={`${faceDetection.landmarks.mouthCenter.x}%`} cy={`${faceDetection.landmarks.mouthCenter.y}%`} r="3" fill="#ec4899" />
+                </svg>
+              ) : (
+                <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-60">
+                  <circle cx="35%" cy="40%" r="4" fill="#06b6d4" className="animate-pulse" />
+                  <circle cx="65%" cy="40%" r="4" fill="#06b6d4" className="animate-pulse" />
+                  <circle cx="50%" cy="55%" r="3" fill="#10b981" />
+                  <path d="M 38 70 Q 50 78 62 70" fill="none" stroke="#ec4899" strokeWidth="2" />
+                  <ellipse cx="50%" cy="50%" rx="35%" ry="45%" fill="none" stroke="#06b6d4" strokeDasharray="3 3" strokeWidth="1" />
+                </svg>
+              )}
+
               <div className="absolute bottom-2 left-2 right-2 bg-slate-950/80 backdrop-blur-sm rounded-lg p-1.5 border border-slate-800 text-center">
                 <span className="text-[10px] text-slate-300 font-medium">
-                  Undertone: <strong className="text-pink-400 capitalize">{scores.undertone}</strong> (Type {scores.fitzpatrickScale})
+                  Undertone: <strong className="text-pink-400 capitalize">{scores.undertone}</strong> (Type {scores.fitzpatrickScale}
+                  {faceDetection?.metrics.itaAngle !== undefined ? ` • ITA ${faceDetection.metrics.itaAngle}°` : ''})
                 </span>
               </div>
             </div>

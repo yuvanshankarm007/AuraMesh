@@ -62,6 +62,39 @@ export interface SkinDiagnosticScores {
   barrierHealth: 'intact' | 'sensitized' | 'severely_compromised';
 }
 
+// Computer Vision: Face Detection & Landmark Coordinates (Normalized 0.0 - 1.0 or pixel percentages)
+export interface FaceLandmarks {
+  leftEye: { x: number; y: number };
+  rightEye: { x: number; y: number };
+  noseTip: { x: number; y: number };
+  mouthCenter: { x: number; y: number };
+  mouthBounds: { x: number; y: number; width: number; height: number };
+  leftCheek: { x: number; y: number };
+  rightCheek: { x: number; y: number };
+  forehead: { x: number; y: number };
+  chin: { x: number; y: number };
+}
+
+export interface FaceDetectionResult {
+  detected: boolean;
+  confidence: number;
+  boundingBox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  landmarks: FaceLandmarks;
+  metrics: {
+    skinToneRgb: { r: number; g: number; b: number };
+    itaAngle: number;
+    fitzpatrickScale: 1 | 2 | 3 | 4 | 5 | 6;
+    detectedUndertone: 'warm' | 'cool' | 'neutral' | 'olive';
+    brightnessLux: number;
+    contrastScore: number;
+  };
+}
+
 // Domain Telemetry: Pharmacology Active Formulation
 export interface FormulationIngredient {
   id: string;
@@ -233,6 +266,7 @@ export interface MultiAgentState {
   aesthetic?: AestheticPlan;
   cart?: SmartBundle;
   climate?: ClimateContext;
+  faceDetection?: FaceDetectionResult;
   whatIfEngine?: {
     activeSwaps: WhatIfSwapOption[];
     activeConflicts: ActiveInteraction[];

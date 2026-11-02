@@ -81,10 +81,16 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleCustomScenario = async (image: string, goal: string, budget: number, diagnostics?: any) => {
+  const handleCustomScenario = async (
+    image: string,
+    goal: string,
+    budget: number,
+    diagnostics?: any,
+    faceDetection?: import('./agent-core/types').FaceDetectionResult
+  ) => {
     setSelectedPersona(null);
     if (ceoRef.current) {
-      await ceoRef.current.startMission(goal, budget, image, diagnostics);
+      await ceoRef.current.startMission(goal, budget, image, diagnostics, faceDetection);
     }
   };
 
@@ -177,6 +183,7 @@ export const App: React.FC = () => {
           onCustomScenario={handleCustomScenario}
           isRunning={agentState.currentStep === 'ANALYZING'}
           currentUserImage={agentState.userImage}
+          activeFaceDetection={agentState.faceDetection}
         />
 
         {/* Environmental & Climate Telemetry Bar */}
@@ -201,12 +208,14 @@ export const App: React.FC = () => {
             <SkinAnalysisRadar
               scores={agentState.diagnostics}
               avatarUrl={agentState.userImage || selectedPersona?.avatarUrl}
+              faceDetection={agentState.faceDetection}
             />
           </div>
           <div className="lg:col-span-6">
             <VirtualTryOnViewer
               aesthetic={agentState.aesthetic}
               avatarUrl={agentState.userImage || selectedPersona?.avatarUrl}
+              faceDetection={agentState.faceDetection}
             />
           </div>
         </div>

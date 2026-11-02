@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { AestheticPlan, LightingMode } from '../agent-core/types';
-import { Palette, CheckCircle2, Sliders, Sparkles, Sun, Lamp, Moon, Layers } from 'lucide-react';
+import { AestheticPlan, LightingMode, FaceDetectionResult } from '../agent-core/types';
+import { Palette, CheckCircle2, Sliders, Sparkles, Sun, Lamp, Moon, Layers, Scan } from 'lucide-react';
 
 interface VTOViewerProps {
   aesthetic?: AestheticPlan;
   avatarUrl?: string;
+  faceDetection?: FaceDetectionResult;
 }
 
-export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({ aesthetic, avatarUrl }) => {
+export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({ aesthetic, avatarUrl, faceDetection }) => {
   const [sliderPos, setSliderPos] = useState(50);
   const [lighting, setLighting] = useState<LightingMode>('daylight');
   const [layers, setLayers] = useState({
@@ -15,6 +16,18 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({ aesthe
     skincareGlow: true,
     cosmeticMakeup: true
   });
+
+  const landmarks = faceDetection?.landmarks || {
+    forehead: { x: 50, y: 22 },
+    leftEye: { x: 35, y: 38 },
+    rightEye: { x: 65, y: 38 },
+    noseTip: { x: 50, y: 54 },
+    leftCheek: { x: 26, y: 52 },
+    rightCheek: { x: 74, y: 52 },
+    mouthCenter: { x: 50, y: 74 },
+    mouthBounds: { x: 36, y: 69, width: 28, height: 10 },
+    chin: { x: 50, y: 92 }
+  };
 
   if (!aesthetic) {
     return (
@@ -85,15 +98,49 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({ aesthe
           {/* Diagnostic Landmark Mesh Overlay (Left Side) */}
           {layers.diagnosticMesh && (
             <svg
-              className="absolute inset-0 w-full h-full pointer-events-none opacity-40"
+              className="absolute inset-0 w-full h-full pointer-events-none opacity-60"
               style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
             >
-              <circle cx="36%" cy="40%" r="3" fill="#06b6d4" />
-              <circle cx="64%" cy="40%" r="3" fill="#06b6d4" />
-              <circle cx="50%" cy="54%" r="3" fill="#10b981" />
-              <circle cx="42%" cy="66%" r="2" fill="#ec4899" />
-              <circle cx="58%" cy="66%" r="2" fill="#ec4899" />
-              <path d="M 38 68 Q 50 76 62 68" fill="none" stroke="#06b6d4" strokeWidth="1" strokeDasharray="2 2" />
+              {/* Triangulation Lines */}
+              <polyline
+                points={`${landmarks.forehead.x}%,${landmarks.forehead.y}% ${landmarks.leftEye.x}%,${landmarks.leftEye.y}% ${landmarks.noseTip.x}%,${landmarks.noseTip.y}% ${landmarks.rightEye.x}%,${landmarks.rightEye.y}% ${landmarks.forehead.x}%,${landmarks.forehead.y}%`}
+                fill="none"
+                stroke="#06b6d4"
+                strokeWidth="1.2"
+                strokeDasharray="2 2"
+              />
+              <polyline
+                points={`${landmarks.leftEye.x}%,${landmarks.leftEye.y}% ${landmarks.leftCheek.x}%,${landmarks.leftCheek.y}% ${landmarks.mouthCenter.x}%,${landmarks.mouthCenter.y}% ${landmarks.rightCheek.x}%,${landmarks.rightCheek.y}% ${landmarks.rightEye.x}%,${landmarks.rightEye.y}%`}
+                fill="none"
+                stroke="#06b6d4"
+                strokeWidth="1"
+              />
+              <line
+                x1={`${landmarks.noseTip.x}%`}
+                y1={`${landmarks.noseTip.y}%`}
+                x2={`${landmarks.mouthCenter.x}%`}
+                y2={`${landmarks.mouthCenter.y}%`}
+                stroke="#ec4899"
+                strokeWidth="1"
+              />
+              <line
+                x1={`${landmarks.mouthCenter.x}%`}
+                y1={`${landmarks.mouthCenter.y}%`}
+                x2={`${landmarks.chin.x}%`}
+                y2={`${landmarks.chin.y}%`}
+                stroke="#06b6d4"
+                strokeWidth="1"
+              />
+
+              {/* Landmark Nodes */}
+              <circle cx={`${landmarks.leftEye.x}%`} cy={`${landmarks.leftEye.y}%`} r="3.5" fill="#06b6d4" />
+              <circle cx={`${landmarks.rightEye.x}%`} cy={`${landmarks.rightEye.y}%`} r="3.5" fill="#06b6d4" />
+              <circle cx={`${landmarks.noseTip.x}%`} cy={`${landmarks.noseTip.y}%`} r="3" fill="#10b981" />
+              <circle cx={`${landmarks.forehead.x}%`} cy={`${landmarks.forehead.y}%`} r="3" fill="#06b6d4" />
+              <circle cx={`${landmarks.leftCheek.x}%`} cy={`${landmarks.leftCheek.y}%`} r="2.5" fill="#ec4899" />
+              <circle cx={`${landmarks.rightCheek.x}%`} cy={`${landmarks.rightCheek.y}%`} r="2.5" fill="#ec4899" />
+              <circle cx={`${landmarks.mouthCenter.x}%`} cy={`${landmarks.mouthCenter.y}%`} r="3" fill="#ec4899" />
+              <circle cx={`${landmarks.chin.x}%`} cy={`${landmarks.chin.y}%`} r="2.5" fill="#06b6d4" />
             </svg>
           )}
 
@@ -119,19 +166,38 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({ aesthe
                     className="absolute inset-0 mix-blend-color opacity-35 pointer-events-none"
                     style={{ backgroundColor: foundation?.hexColor || '#d6b38a' }}
                   />
-                  {/* Lip highlight */}
+                  {/* Dynamic Lip Highlight matching detected mouth bounds */}
                   <div
-                    className="absolute bottom-[24%] left-[40%] w-[20%] h-[8%] rounded-full opacity-45 mix-blend-multiply pointer-events-none filter blur-[2px]"
-                    style={{ backgroundColor: lip?.hexColor || '#c25a3f' }}
+                    className="absolute rounded-full opacity-50 mix-blend-multiply pointer-events-none filter blur-[2px]"
+                    style={{
+                      top: `${landmarks.mouthBounds.y}%`,
+                      left: `${landmarks.mouthBounds.x}%`,
+                      width: `${landmarks.mouthBounds.width}%`,
+                      height: `${landmarks.mouthBounds.height}%`,
+                      backgroundColor: lip?.hexColor || '#c25a3f'
+                    }}
                   />
-                  {/* Cheek blush */}
+                  {/* Left Cheek Blush matching detected left cheek */}
                   <div
-                    className="absolute top-[48%] left-[24%] w-[18%] h-[14%] rounded-full opacity-35 mix-blend-screen pointer-events-none filter blur-[8px]"
-                    style={{ backgroundColor: blush?.hexColor || '#df826c' }}
+                    className="absolute rounded-full opacity-35 mix-blend-screen pointer-events-none filter blur-[8px]"
+                    style={{
+                      top: `${Math.max(10, landmarks.leftCheek.y - 7)}%`,
+                      left: `${Math.max(5, landmarks.leftCheek.x - 9)}%`,
+                      width: '18%',
+                      height: '14%',
+                      backgroundColor: blush?.hexColor || '#df826c'
+                    }}
                   />
+                  {/* Right Cheek Blush matching detected right cheek */}
                   <div
-                    className="absolute top-[48%] right-[24%] w-[18%] h-[14%] rounded-full opacity-35 mix-blend-screen pointer-events-none filter blur-[8px]"
-                    style={{ backgroundColor: blush?.hexColor || '#df826c' }}
+                    className="absolute rounded-full opacity-35 mix-blend-screen pointer-events-none filter blur-[8px]"
+                    style={{
+                      top: `${Math.max(10, landmarks.rightCheek.y - 7)}%`,
+                      left: `${Math.max(5, landmarks.rightCheek.x - 9)}%`,
+                      width: '18%',
+                      height: '14%',
+                      backgroundColor: blush?.hexColor || '#df826c'
+                    }}
                   />
                 </>
               )}
