@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { AestheticPlan, LightingMode, FaceDetectionResult, SkinDiagnosticScores } from '../agent-core/types';
 import { FaceDetectionEngine } from '../agent-core/FaceDetectionEngine';
+import { MediaPipeService } from '../agent-core/MediaPipeFaceMesh';
 import {
   Palette,
   CheckCircle2,
@@ -458,13 +459,15 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().catch(e => console.warn('Video play error on metadata:', e));
+        };
         videoRef.current.play().catch(e => console.warn('Live motion play error:', e));
       }
     } catch (err: any) {
       console.warn('Webcam permission error:', err);
       setIsWebcamActive(false);
-      setWebcamError('Camera blocked or not found. Switched to Motion Video so you can still try on filters!');
-      setActiveMode('demo_motion');
+      setWebcamError('Camera access requested. Please click "Allow" in your browser or tap "Turn On" below.');
     }
   };
 
@@ -499,6 +502,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
   useEffect(() => {
     let isSubscribed = true;
     const engine = FaceDetectionEngine.getInstance();
+    const mediaPipe = MediaPipeService.getInstance();
 
     const renderMotionFrame = async () => {
       if (!isSubscribed) return;
@@ -536,9 +540,23 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
           ctx.drawImage(video, 0, 0, cw, ch);
           ctx.restore();
         } else {
-          ctx.fillStyle = '#0f172a';
+          ctx.fillStyle = '#090d16';
           ctx.fillRect(0, 0, cw, ch);
+          ctx.fillStyle = '#f472b6';
+          ctx.font = 'bold 12px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('Starting camera stream...', cw * 0.5, ch * 0.5);
         }
+      } else if (activeMode === 'motion_webcam' && !isWebcamActive) {
+        ctx.fillStyle = '#090d16';
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Live Camera Paused', cw * 0.5, ch * 0.46);
+        ctx.fillStyle = '#f472b6';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('Tap "Turn On" below to view live feed', cw * 0.5, ch * 0.52);
       } else if (activeMode === 'demo_motion') {
         demoMotionTick.current += 0.04;
         const tick = demoMotionTick.current;
@@ -602,11 +620,23 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         ctx.fill();
       }
 
-      // 2. COMPUTER VISION TRACKING (Throttled for 60 FPS)
+      // 2. 3D FACE TRACKING (Google MediaPipe Neural Mesh + CV Fallback)
       frameTickRef.current += 1;
       let result = cachedFaceRef.current;
-      if (frameTickRef.current % 5 === 0 || !result) {
-        result = await engine.detectFace(canvas);
+      if (frameTickRef.current % 4 === 0 || !result) {
+        if (activeMode === 'motion_webcam' && videoRef.current && isWebcamActive && videoRef.current.readyState >= 2) {
+          mediaPipe.processFrame(videoRef.current);
+        } else {
+          mediaPipe.processFrame(canvas);
+        }
+
+        const mpLandmarks = mediaPipe.getRawLandmarks();
+        if (mpLandmarks && mpLandmarks.length > 0) {
+          result = mediaPipe.convertToDetectionResult(mpLandmarks, canvas);
+        } else {
+          result = await engine.detectFace(canvas);
+        }
+
         cachedFaceRef.current = result;
         if (isSubscribed) {
           setLiveFace(result);
@@ -1248,8 +1278,23 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
 
   return (
     <div id="live-ar-studio" className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl backdrop-blur-sm space-y-4 scroll-mt-6">
-      {/* Hidden Video for Webcam Stream */}
-      <video ref={videoRef} autoPlay playsInline muted className="hidden" />
+      {/* Offscreen Video for Webcam Stream (never use display:none which suspends video frame decoding in Chromium) */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '1px',
+          height: '1px',
+          opacity: 0,
+          pointerEvents: 'none',
+          zIndex: -100
+        }}
+      />
 
       {/* Top Header: Title, Studio Mode & Camera Controls */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-800 flex-wrap gap-2">
@@ -1421,12 +1466,12 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
               {liveFace?.detected ? (
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950/80 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shadow-sm">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  Locked ({Math.round(liveFace.confidence * 100)}%)
+                  {liveFace.confidence >= 0.98 ? 'MediaPipe 3D' : 'Face'} Locked ({Math.round(liveFace.confidence * 100)}%)
                 </span>
               ) : (
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950/80 text-amber-300 border border-amber-500/30 flex items-center gap-1 shadow-sm">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  Align Face
+                  Align Face in View
                 </span>
               )}
             </div>
