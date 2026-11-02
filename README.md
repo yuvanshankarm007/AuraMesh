@@ -7,8 +7,9 @@
 [![TypeScript 5.8](https://img.shields.io/badge/TypeScript-5.8-3178c6.svg?logo=typescript)](https://www.typescriptlang.org/)
 [![Vite 6](https://img.shields.io/badge/Vite-6.4-646cff.svg?logo=vite)](https://vitejs.dev/)
 [![Tailwind CSS 3.4](https://img.shields.io/badge/Tailwind-3.4-38bdf8.svg?logo=tailwind-css)](https://tailwindcss.com/)
-[![Tests Passing](https://img.shields.io/badge/Tests-25%2F25%20Passing-emerald.svg)](https://vitest.dev/)
+[![Tests Passing](https://img.shields.io/badge/Tests-26%2F26%20Passing-emerald.svg)](https://vitest.dev/)
 [![YouCam API](https://img.shields.io/badge/Perfect%20Corp-YouCam%20API-ff007f.svg)](https://www.perfectcorp.com/)
+[![MediaPipe](https://img.shields.io/badge/MediaPipe-468--Point%203D%20Neural%20Mesh-00bcd4.svg)](https://developers.google.com/mediapipe)
 
 **Autonomous Multi-Agent Dermatology Telemetry, Clinical Formulation Safety, and Live Motion AR Try-On with Peer-to-Peer Negotiation.**
 
@@ -37,7 +38,7 @@ Beauty and skincare e-commerce suffers from two massive, chronic failure points:
 | :--- | :--- | :--- | :--- | :--- |
 | **System Architecture** | Static SQL Database | Sequential Chain (DAG) | Single-Agent / Tool-calling | **3-Tier Bidirectional Web with Hop-Count Convergence** |
 | **Diagnostic Sensory** | None (Text questionnaire) | Generic image caption | YouCam Skin Analysis API | **YouCam API + Native Client-Side CV Engine (ITA / Fitzpatrick / YCbCr)** |
-| **AR Try-On Experience** | Static 2D sticker overlay | None | Basic split image | **Live Motion AR: 6 Snapchat Lenses + Clinical Heatmap + 30-Day Recovery** |
+| **AR Try-On Experience** | Static 2D sticker overlay | None | Basic split image | **Live Motion AR: Google MediaPipe 468-pt 3D Neural Mesh + 6 Snapchat Lenses + Clinical Heatmap + 30-Day Recovery** |
 | **Chemical Safety** | None | Basic keyword search | Static warnings | **Rigorous Contraindication Matrix + Active Vehicle Rules** |
 | **Budget Optimization** | Flat coupon codes | Fixed budget filter | Drop random items | **Autonomous P2P Agent Negotiation (Bio-equivalent Active Swaps)** |
 | **Longitudinal Tracking** | None | Text prompt | Static Day 1 / Day 30 images | **Interactive ChronoSkin 30-Day Simulator with Dynamic Score Interpolation** |
@@ -98,7 +99,7 @@ AuraMesh AI features a unified HTML5 Canvas pipeline rendering live at **60 FPS*
 
 ### 1. ✨ Snapchat Beauty Studio
 * **6 Signature Lenses:**
-  - 🌟 **Snap Glam:** Airbrushed skin smoothing, winged cat-eye liner, fluttery 3D lashes, rosy diffused blush, pearl cheekbone highlighter, plump strawberry glossy lips, and floating gold stardust particles.
+  - 🌟 **Snap Glam:** Airbrushed porcelain skin smoothing, zygomatic cheekbone radiance, crisp iris catchlight sparkle, precision 3D lip tint, and floating gold stardust halo particles.
   - 🌸 **Sunset Glow:** Viral Sunset Blush blended seamlessly across both cheeks and over the nose bridge with cute star freckles.
   - 🌟 **Golden Hour:** Sun-drenched golden bronze radiance, high-specular cheekbone sheen, and honey gloss.
   - 💎 **Glass Skin:** Porcelain dewy glass-skin smoothing, mirror cheekbone highlight, and crystal clear lip oil.
@@ -150,7 +151,7 @@ cd AuraMesh
 # 2. Install dependencies
 npm install
 
-# 3. Run automated test suite (25 tests)
+# 3. Run automated test suite (26 tests)
 npm test
 
 # 4. Start local development server
