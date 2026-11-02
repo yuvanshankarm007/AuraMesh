@@ -270,32 +270,32 @@ const AgentWebVisualizerComponent: React.FC<VisualizerProps> = ({ state }) => {
         <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-2 text-center">
           <div className="text-slate-500 uppercase tracking-wider">Vector Clock</div>
           <div className="font-mono text-cyan-400 font-bold text-xs mt-0.5">
-            VC_{state.governance.vectorClock}
+            VC_{state.governance?.vectorClock ?? 0}
           </div>
         </div>
         <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-2 text-center">
           <div className="text-slate-500 uppercase tracking-wider">Max Hop Tracked</div>
           <div className="font-mono text-emerald-400 font-bold text-xs mt-0.5">
-            {state.governance.maxHopRecorded} / 7 Allowed
+            {state.governance?.maxHopRecorded ?? 0} / 7 Allowed
           </div>
         </div>
         <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-2 text-center">
           <div className="text-slate-500 uppercase tracking-wider">Invariants Audited</div>
           <div className="font-mono text-pink-400 font-bold text-xs mt-0.5 flex items-center justify-center gap-1">
             <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-            {state.governance.invariantsPassed} Passed
+            {state.governance?.invariantsPassed ?? 0} Passed
           </div>
         </div>
         <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-2 text-center">
           <div className="text-slate-500 uppercase tracking-wider">Clinical Vetoes</div>
           <div className="font-mono text-amber-400 font-bold text-xs mt-0.5">
-            {state.governance.safetyVetoesIssued} Active Blocked
+            {state.governance?.safetyVetoesIssued ?? 0} Active Blocked
           </div>
         </div>
         <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-2 text-center col-span-2 sm:col-span-1">
           <div className="text-slate-500 uppercase tracking-wider">Deadlocks</div>
           <div className="font-mono text-emerald-400 font-bold text-xs mt-0.5">
-            {state.governance.deadlocksPrevented} Prevented
+            {state.governance?.deadlocksPrevented ?? 0} Prevented
           </div>
         </div>
       </div>

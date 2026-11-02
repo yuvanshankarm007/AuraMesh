@@ -20,6 +20,7 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
   const [customBudget, setCustomBudget] = useState(48);
   const [customConcern, setCustomConcern] = useState<'acne' | 'mature' | 'barrier'>('acne');
   const [isWebcamOpen, setIsWebcamOpen] = useState(false);
+  const [webcamNotice, setWebcamNotice] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -64,6 +65,8 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
     } catch (err) {
       console.warn('Webcam permission denied or unavailable:', err);
       setIsWebcamOpen(false);
+      setWebcamNotice('Webcam unavailable in this environment — please use Upload Photo or select a Demo Persona.');
+      setTimeout(() => setWebcamNotice(null), 4500);
     }
   };
 
@@ -155,6 +158,13 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
           </button>
         </div>
       </div>
+
+      {webcamNotice && (
+        <div className="mb-3 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between">
+          <span>{webcamNotice}</span>
+          <button onClick={() => setWebcamNotice(null)} className="text-amber-400 hover:text-amber-200 text-xs font-bold ml-2">Dismiss</button>
+        </div>
+      )}
 
       {/* Preset Personas Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
