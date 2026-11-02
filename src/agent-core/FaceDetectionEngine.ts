@@ -320,8 +320,9 @@ export class FaceDetectionEngine {
       }
     }
 
-    // If max neighborhood density is too low (< 28 skin pixels in a 30x30 region), no face is in view
-    if (maxCellCount < 28 || totalSkinCount > 22000) {
+    // If max neighborhood density is too low (< 32 skin pixels in a 30x30 region), no face is in view.
+    // Also reject diffuse background walls, wooden cabinets, or doors where warm pixels are spread everywhere.
+    if (maxCellCount < 32 || totalSkinCount > 22000 || (totalSkinCount > 3500 && (maxCellCount / totalSkinCount) < 0.085)) {
       this.prevBox = null;
       return this.createFallbackResult(false, avgLux);
     }

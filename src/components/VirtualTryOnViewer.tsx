@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { AestheticPlan, LightingMode, FaceDetectionResult, SkinDiagnosticScores } from '../agent-core/types';
 import { FaceDetectionEngine } from '../agent-core/FaceDetectionEngine';
-import { MediaPipeService } from '../agent-core/MediaPipeFaceMesh';
+import { MediaPipeService, MP_LIP_OUTER_INDICES, MP_FACE_OVAL_INDICES } from '../agent-core/MediaPipeFaceMesh';
 import {
   Palette,
   CheckCircle2,
@@ -245,38 +245,23 @@ function drawSnapchatEyeEnhancement(
   isLeft: boolean
 ) {
   ctx.save();
-  const dir = isLeft ? -1 : 1;
 
-  // 1. Soft smoky tightline along upper eyelid (diffused, natural soft-light/multiply blending)
-  ctx.save();
-  ctx.globalCompositeOperation = 'multiply';
-  const grad = ctx.createLinearGradient(eyeX - eyeW * 0.45, eyeY, eyeX + eyeW * 0.45, eyeY);
-  grad.addColorStop(0, 'rgba(45, 30, 35, 0.20)');
-  grad.addColorStop(0.5, 'rgba(30, 20, 25, 0.50)');
-  grad.addColorStop(1, 'rgba(45, 30, 35, 0.20)');
-  ctx.strokeStyle = grad;
-  ctx.lineWidth = 1.6;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(eyeX - eyeW * 0.40, eyeY);
-  ctx.quadraticCurveTo(eyeX, eyeY - eyeH * 0.40, eyeX + eyeW * 0.40, eyeY);
-  // Soft gentle wing lift (feathered, non-harsh)
-  ctx.quadraticCurveTo(eyeX + dir * eyeW * 0.48, eyeY - eyeH * 0.32, eyeX + dir * eyeW * 0.56, eyeY - eyeH * 0.38);
-  ctx.stroke();
-  ctx.restore();
-
-  // 2. Sparkling iris ring-light catchlight (signature studio/Snapchat lively catchlight)
+  // 1. Lively iris catchlight (signature studio/Snapchat ring-light sparkle)
   ctx.fillStyle = '#ffffff';
   ctx.shadowColor = '#ffffff';
-  ctx.shadowBlur = 3;
+  ctx.shadowBlur = 4;
   ctx.beginPath();
-  ctx.arc(eyeX + (isLeft ? 1.5 : -1.5), eyeY - 2.2, 1.8, 0, Math.PI * 2);
+  ctx.arc(eyeX + (isLeft ? 1.2 : -1.2), eyeY - 2.0, 1.4, 0, Math.PI * 2);
   ctx.fill();
 
-  // 3. Subtle lower lash soft light brighten to reduce fatigue
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.30)';
+  // 2. Delicate undereye soft brightening to reduce dark fatigue circles
+  ctx.globalCompositeOperation = 'soft-light';
+  const underGrad = ctx.createRadialGradient(eyeX, eyeY + eyeH * 0.32, 1, eyeX, eyeY + eyeH * 0.32, eyeW * 0.45);
+  underGrad.addColorStop(0, 'rgba(255, 255, 255, 0.18)');
+  underGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  ctx.fillStyle = underGrad;
   ctx.beginPath();
-  ctx.arc(eyeX, eyeY + eyeH * 0.28, 1.2, 0, Math.PI * 2);
+  ctx.ellipse(eyeX, eyeY + eyeH * 0.32, eyeW * 0.45, eyeH * 0.22, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -345,12 +330,12 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
 
   useEffect(() => {
     const arr = [];
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 18; i++) {
       arr.push({
-        angle: (i / 20) * Math.PI * 2 + Math.random() * 0.4,
-        distRatio: 0.95 + Math.random() * 0.65,
-        size: 3.5 + Math.random() * 4,
-        speed: (0.006 + Math.random() * 0.008) * (i % 2 === 0 ? 1 : -1),
+        angle: (i / 18) * Math.PI * 2 + Math.random() * 0.4,
+        distRatio: 1.22 + Math.random() * 0.35, // Ambient perimeter halo only, never on face features
+        size: 1.8 + Math.random() * 1.6, // Delicate stardust (1.8px - 3.4px)
+        speed: (0.005 + Math.random() * 0.006) * (i % 2 === 0 ? 1 : -1),
         phase: Math.random() * Math.PI * 2,
         type: (i % 3 === 0 ? 'star' : i % 3 === 1 ? 'diamond' : 'orb') as 'star' | 'diamond' | 'orb'
       });
@@ -624,6 +609,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
       frameTickRef.current += 1;
       let result = cachedFaceRef.current;
       if (frameTickRef.current % 4 === 0 || !result) {
+        const isMirrored = activeMode === 'motion_webcam';
         if (activeMode === 'motion_webcam' && videoRef.current && isWebcamActive && videoRef.current.readyState >= 2) {
           mediaPipe.processFrame(videoRef.current);
         } else {
@@ -632,7 +618,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
 
         const mpLandmarks = mediaPipe.getRawLandmarks();
         if (mpLandmarks && mpLandmarks.length > 0) {
-          result = mediaPipe.convertToDetectionResult(mpLandmarks, canvas);
+          result = mediaPipe.convertToDetectionResult(mpLandmarks, canvas, isMirrored);
         } else {
           result = await engine.detectFace(canvas);
         }
@@ -715,151 +701,177 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
         // OPTION 1: SNAPCHAT BEAUTY FILTER
         // ====================================================================
         if (studioMode === 'snapchat_beauty') {
-          // A. Airbrush Skin Smoothing
+          const isMirrored = activeMode === 'motion_webcam';
+
+          // A. Airbrush Skin Smoothing (Feathered, soft translucent skin glow)
           if (layers.skincareGlow) {
             ctx.save();
             ctx.globalCompositeOperation = 'soft-light';
-            const foundGrad = ctx.createRadialGradient(fcx, fcy, 12, fcx, fcy, Math.max(frx, fry));
-            const fAlpha = 0.55 * smoothingIntensity;
+            const fAlpha = 0.20 * smoothingIntensity;
+            const foundGrad = ctx.createRadialGradient(fcx, fcy, 10, fcx, fcy, Math.max(frx, fry) * 1.05);
             foundGrad.addColorStop(0, hexToRgba(selectedFoundation, fAlpha));
-            foundGrad.addColorStop(0.70, hexToRgba(selectedFoundation, fAlpha * 0.65));
+            foundGrad.addColorStop(0.55, hexToRgba(selectedFoundation, fAlpha * 0.70));
+            foundGrad.addColorStop(0.85, hexToRgba(selectedFoundation, fAlpha * 0.25));
             foundGrad.addColorStop(1, hexToRgba(selectedFoundation, 0));
             ctx.fillStyle = foundGrad;
             ctx.beginPath();
-            ctx.ellipse(fcx, fcy, frx, fry, 0, 0, Math.PI * 2);
+            ctx.ellipse(fcx, fcy, frx * 1.05, fry * 1.05, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            const glowGrad = ctx.createRadialGradient(fcx, fcy - bh * 0.08, 10, fcx, fcy - bh * 0.08, frx * 0.85);
-            glowGrad.addColorStop(0, `rgba(255, 255, 255, ${0.16 * smoothingIntensity})`);
-            glowGrad.addColorStop(0.65, `rgba(255, 255, 255, ${0.06 * smoothingIntensity})`);
+            // Very subtle dewy bridge highlight
+            const glowGrad = ctx.createRadialGradient(fcx, fcy - bh * 0.08, 6, fcx, fcy - bh * 0.08, frx * 0.75);
+            glowGrad.addColorStop(0, `rgba(255, 255, 255, ${0.10 * smoothingIntensity})`);
+            glowGrad.addColorStop(0.60, `rgba(255, 255, 255, ${0.03 * smoothingIntensity})`);
             glowGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
             ctx.fillStyle = glowGrad;
             ctx.beginPath();
-            ctx.ellipse(fcx, fcy - bh * 0.08, frx * 0.85, fry * 0.75, 0, 0, Math.PI * 2);
+            ctx.ellipse(fcx, fcy - bh * 0.08, frx * 0.75, fry * 0.60, 0, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
           }
 
-          // B. Cheek Blush & Highlighting
+          // B. Cheek Blush & Highlighting (Natural zygomatic cheekbone blending)
           if (layers.cosmeticMakeup) {
-            const blushRadius = Math.max(24, bw * 0.16);
             ctx.save();
             ctx.globalCompositeOperation = 'soft-light';
             const blushColor = activeLens.blushColor;
+            const bAlpha = 0.20 * smoothingIntensity;
+            const bRadiusX = Math.max(22, bw * 0.18);
+            const bRadiusY = Math.max(14, bh * 0.10);
 
             if (activeLens.id === 'sunset_blush') {
-              const noseBlushY = noseY - 12;
-              const wGrad = ctx.createRadialGradient(noseX, noseBlushY, 4, noseX, noseBlushY, bw * 0.38);
-              wGrad.addColorStop(0, hexToRgba(blushColor, 0.45 * smoothingIntensity));
-              wGrad.addColorStop(0.70, hexToRgba(blushColor, 0.22 * smoothingIntensity));
+              const noseBlushY = noseY - 8;
+              const wGrad = ctx.createRadialGradient(noseX, noseBlushY, 4, noseX, noseBlushY, bw * 0.35);
+              wGrad.addColorStop(0, hexToRgba(blushColor, 0.22 * smoothingIntensity));
+              wGrad.addColorStop(0.65, hexToRgba(blushColor, 0.10 * smoothingIntensity));
               wGrad.addColorStop(1, hexToRgba(blushColor, 0));
               ctx.fillStyle = wGrad;
               ctx.beginPath();
-              ctx.ellipse(noseX, noseBlushY, bw * 0.40, bh * 0.11, 0, 0, Math.PI * 2);
+              ctx.ellipse(noseX, noseBlushY, bw * 0.35, bh * 0.09, 0, 0, Math.PI * 2);
               ctx.fill();
             } else {
-              const bAlpha = 0.48 * smoothingIntensity;
-              const blushGrad1 = ctx.createRadialGradient(blX1, blY1, 2, blX1, blY1, blushRadius);
+              // Left cheek (screen left, angled softly upwards towards temple: -0.22 rad)
+              const blushGrad1 = ctx.createRadialGradient(blX1, blY1, 2, blX1, blY1, bRadiusX);
               blushGrad1.addColorStop(0, hexToRgba(blushColor, bAlpha));
-              blushGrad1.addColorStop(0.65, hexToRgba(blushColor, bAlpha * 0.45));
+              blushGrad1.addColorStop(0.60, hexToRgba(blushColor, bAlpha * 0.50));
               blushGrad1.addColorStop(1, hexToRgba(blushColor, 0));
               ctx.fillStyle = blushGrad1;
               ctx.beginPath();
-              ctx.arc(blX1, blY1, blushRadius, 0, Math.PI * 2);
+              ctx.ellipse(blX1, blY1, bRadiusX, bRadiusY, -0.22, 0, Math.PI * 2);
               ctx.fill();
 
-              const blushGrad2 = ctx.createRadialGradient(blX2, blY2, 2, blX2, blY2, blushRadius);
+              // Right cheek (screen right, angled softly upwards towards temple: +0.22 rad)
+              const blushGrad2 = ctx.createRadialGradient(blX2, blY2, 2, blX2, blY2, bRadiusX);
               blushGrad2.addColorStop(0, hexToRgba(blushColor, bAlpha));
-              blushGrad2.addColorStop(0.65, hexToRgba(blushColor, bAlpha * 0.45));
+              blushGrad2.addColorStop(0.60, hexToRgba(blushColor, bAlpha * 0.50));
               blushGrad2.addColorStop(1, hexToRgba(blushColor, 0));
               ctx.fillStyle = blushGrad2;
               ctx.beginPath();
-              ctx.arc(blX2, blY2, blushRadius, 0, Math.PI * 2);
+              ctx.ellipse(blX2, blY2, bRadiusX, bRadiusY, 0.22, 0, Math.PI * 2);
               ctx.fill();
             }
             ctx.restore();
 
-            // Cheekbone Highlighter
+            // Subtle Cheekbone Highlighter (Feathered, soft-light / screen with 0.18 opacity, NO yellow balls)
             ctx.save();
             ctx.globalCompositeOperation = 'screen';
             const hlColor = activeLens.highlighterColor;
+            const hlAlpha = 0.18 * smoothingIntensity;
 
-            const hlGrad1 = ctx.createRadialGradient(blX1 - 2, blY1 - bh * 0.04, 1, blX1 - 2, blY1 - bh * 0.04, blushRadius * 0.7);
-            hlGrad1.addColorStop(0, hexToRgba(hlColor, 0.60 * smoothingIntensity));
-            hlGrad1.addColorStop(0.5, hexToRgba(hlColor, 0.22 * smoothingIntensity));
+            const hlGrad1 = ctx.createRadialGradient(blX1 - 4, blY1 - bh * 0.04, 1, blX1 - 4, blY1 - bh * 0.04, bRadiusX * 0.7);
+            hlGrad1.addColorStop(0, hexToRgba(hlColor, hlAlpha));
+            hlGrad1.addColorStop(0.55, hexToRgba(hlColor, hlAlpha * 0.40));
             hlGrad1.addColorStop(1, 'rgba(255, 255, 255, 0)');
             ctx.fillStyle = hlGrad1;
             ctx.beginPath();
-            ctx.ellipse(blX1 - 2, blY1 - bh * 0.04, blushRadius * 0.65, blushRadius * 0.32, -0.22, 0, Math.PI * 2);
+            ctx.ellipse(blX1 - 4, blY1 - bh * 0.04, bRadiusX * 0.65, bRadiusY * 0.40, -0.22, 0, Math.PI * 2);
             ctx.fill();
 
-            const hlGrad2 = ctx.createRadialGradient(blX2 + 2, blY2 - bh * 0.04, 1, blX2 + 2, blY2 - bh * 0.04, blushRadius * 0.7);
-            hlGrad2.addColorStop(0, hexToRgba(hlColor, 0.60 * smoothingIntensity));
-            hlGrad2.addColorStop(0.5, hexToRgba(hlColor, 0.22 * smoothingIntensity));
+            const hlGrad2 = ctx.createRadialGradient(blX2 + 4, blY2 - bh * 0.04, 1, blX2 + 4, blY2 - bh * 0.04, bRadiusX * 0.7);
+            hlGrad2.addColorStop(0, hexToRgba(hlColor, hlAlpha));
+            hlGrad2.addColorStop(0.55, hexToRgba(hlColor, hlAlpha * 0.40));
             hlGrad2.addColorStop(1, 'rgba(255, 255, 255, 0)');
             ctx.fillStyle = hlGrad2;
             ctx.beginPath();
-            ctx.ellipse(blX2 + 2, blY2 - bh * 0.04, blushRadius * 0.65, blushRadius * 0.32, 0.22, 0, Math.PI * 2);
+            ctx.ellipse(blX2 + 4, blY2 - bh * 0.04, bRadiusX * 0.65, bRadiusY * 0.40, 0.22, 0, Math.PI * 2);
             ctx.fill();
 
+            // Delicate dewy nose tip highlight (subtle glow, NOT a white button)
             if (activeLens.hasNoseHighlight) {
-              const noseGrad = ctx.createRadialGradient(noseX, noseY, 1, noseX, noseY, 8);
-              noseGrad.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
-              noseGrad.addColorStop(0.5, hexToRgba(hlColor, 0.40));
+              const noseGrad = ctx.createRadialGradient(noseX, noseY, 1, noseX, noseY, 6);
+              noseGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+              noseGrad.addColorStop(0.5, hexToRgba(hlColor, 0.15));
               noseGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
               ctx.fillStyle = noseGrad;
               ctx.beginPath();
-              ctx.arc(noseX, noseY, 6.5, 0, Math.PI * 2);
+              ctx.arc(noseX, noseY, 4, 0, Math.PI * 2);
               ctx.fill();
             }
             ctx.restore();
 
-            // Natural Eye Enhancement & Iris Ring-Light Catchlights (No cartoon lashes)
+            // Natural Eye Enhancement: Lively iris ring catchlights & gentle undereye refresh (NO drawn cartoon lines)
             if (activeLens.hasLashes || activeLens.hasEyeliner) {
-              const eyeW = Math.max(22, bw * 0.17);
-              const eyeH = Math.max(10, bh * 0.09);
+              const eyeW = Math.max(20, bw * 0.16);
+              const eyeH = Math.max(10, bh * 0.08);
               drawSnapchatEyeEnhancement(ctx, lex, ley, eyeW, eyeH, true);
               drawSnapchatEyeEnhancement(ctx, rex, rey, eyeW, eyeH, false);
             }
 
-            // Cheek Star Sparkles
-            if (activeLens.hasCheekSparkles) {
-              drawStarSparkle(ctx, blX1 - 12, blY1 - 8, 4.2, '#ffffff');
-              drawStarSparkle(ctx, blX1 + 10, blY1 + 10, 3.2, '#ffffff');
-              drawStarSparkle(ctx, blX2 + 12, blY2 - 8, 4.2, '#ffffff');
-              drawStarSparkle(ctx, blX2 - 10, blY2 + 10, 3.2, '#ffffff');
-            }
-
-            // Plump Glossy Lips
+            // Precision Lip Tint (Polygon boundary clipping when FaceMesh available, or soft natural tint)
+            const lipPoints = mediaPipe.getPolygonPoints(MP_LIP_OUTER_INDICES, cw, ch, isMirrored);
             const mx = (lmk.mouthCenter.x / 100) * cw;
             const my = (lmk.mouthCenter.y / 100) * ch;
-            const mw = Math.max(26, (lmk.mouthBounds.width / 100) * cw);
-            const mh = Math.max(11, (lmk.mouthBounds.height / 100) * ch);
+            const mw = Math.max(24, (lmk.mouthBounds.width / 100) * cw);
+            const mh = Math.max(10, (lmk.mouthBounds.height / 100) * ch);
 
             ctx.save();
-            ctx.globalCompositeOperation = 'multiply';
-            const lipGrad = ctx.createRadialGradient(mx, my, 2, mx, my, mw * 0.55);
-            lipGrad.addColorStop(0, hexToRgba(selectedLip, 0.82));
-            lipGrad.addColorStop(0.7, hexToRgba(selectedLip, 0.56));
-            lipGrad.addColorStop(1, hexToRgba(selectedLip, 0.15));
-            ctx.fillStyle = lipGrad;
-            ctx.beginPath();
-            ctx.ellipse(mx, my, mw * 0.53, mh * 0.60, 0, 0, Math.PI * 2);
-            ctx.fill();
+            if (lipPoints && lipPoints.length >= 10) {
+              // Exact 3D lip polygon clipping: lipstick NEVER bleeds or looks like an oval!
+              ctx.beginPath();
+              ctx.moveTo(lipPoints[0].x, lipPoints[0].y);
+              for (let i = 1; i < lipPoints.length; i++) {
+                ctx.lineTo(lipPoints[i].x, lipPoints[i].y);
+              }
+              ctx.closePath();
+              ctx.clip();
 
+              ctx.globalCompositeOperation = 'soft-light';
+              ctx.fillStyle = hexToRgba(selectedLip, 0.38);
+              ctx.fill();
+
+              ctx.globalCompositeOperation = 'multiply';
+              ctx.fillStyle = hexToRgba(selectedLip, 0.22);
+              ctx.fill();
+            } else {
+              // Smooth feathered fallback
+              ctx.globalCompositeOperation = 'soft-light';
+              const lipGrad = ctx.createRadialGradient(mx, my, 2, mx, my, mw * 0.50);
+              lipGrad.addColorStop(0, hexToRgba(selectedLip, 0.35));
+              lipGrad.addColorStop(0.70, hexToRgba(selectedLip, 0.18));
+              lipGrad.addColorStop(1, hexToRgba(selectedLip, 0));
+              ctx.fillStyle = lipGrad;
+              ctx.beginPath();
+              ctx.ellipse(mx, my, mw * 0.48, mh * 0.42, 0, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+
+            // Lower lip subtle specular shine (translucent sheer sheen, NO white circle)
+            ctx.save();
             ctx.globalCompositeOperation = 'screen';
-            const glossGrad = ctx.createRadialGradient(mx, my + mh * 0.12, 1, mx, my + mh * 0.12, mw * 0.36);
-            glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
-            glossGrad.addColorStop(0.6, 'rgba(255, 255, 255, 0.18)');
+            const glossY = my + mh * 0.14;
+            const glossGrad = ctx.createRadialGradient(mx, glossY, 1, mx, glossY, mw * 0.25);
+            glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.22)');
+            glossGrad.addColorStop(0.60, 'rgba(255, 255, 255, 0.06)');
             glossGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
             ctx.fillStyle = glossGrad;
             ctx.beginPath();
-            ctx.ellipse(mx, my + mh * 0.12, mw * 0.34, mh * 0.28, 0, 0, Math.PI * 2);
+            ctx.ellipse(mx, glossY, mw * 0.24, mh * 0.16, 0, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
           }
 
-          // Floating Sparkle Particles
+          // Floating Sparkle Particles (Delicate ambient stardust halo outside the face)
           if (activeLens.hasFloatingParticles) {
             ctx.save();
             ctx.globalCompositeOperation = 'screen';
@@ -868,7 +880,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
               p.angle += p.speed;
               const px = fcx + Math.cos(p.angle) * (frx * p.distRatio);
               const py = fcy + Math.sin(p.angle) * (fry * p.distRatio);
-              const alpha = Math.max(0.18, 0.55 + 0.45 * Math.sin(tick * 3 + p.phase));
+              const alpha = Math.max(0.12, 0.35 + 0.30 * Math.sin(tick * 2.5 + p.phase));
 
               if (p.type === 'star') {
                 drawStarSparkle(ctx, px, py, p.size, hexToRgba(pColor, alpha));
@@ -882,7 +894,7 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
                 ctx.closePath();
                 ctx.fill();
               } else {
-                const orbGrad = ctx.createRadialGradient(px, py, 1, px, py, p.size);
+                const orbGrad = ctx.createRadialGradient(px, py, 0.5, px, py, p.size);
                 orbGrad.addColorStop(0, hexToRgba(pColor, alpha));
                 orbGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
                 ctx.fillStyle = orbGrad;

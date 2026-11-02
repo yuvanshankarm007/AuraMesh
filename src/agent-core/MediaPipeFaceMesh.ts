@@ -7,6 +7,21 @@ import { FaceMesh, Results, NormalizedLandmarkList } from '@mediapipe/face_mesh'
 import { FaceDetectionResult, FaceLandmarks } from './types';
 import { FaceDetectionEngine } from './FaceDetectionEngine';
 
+// Key MediaPipe 468 Landmark Indices
+export const MP_LIP_OUTER_INDICES = [
+  61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291,
+  375, 321, 405, 314, 17, 84, 181, 91, 146
+];
+
+export const MP_FACE_OVAL_INDICES = [
+  10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+  397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
+  172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109
+];
+
+export const MP_LEFT_EYE_INDICES = [263, 249, 390, 373, 374, 380, 381, 382, 362];
+export const MP_RIGHT_EYE_INDICES = [33, 7, 163, 144, 145, 153, 154, 155, 133];
+
 export class MediaPipeService {
   private static instance: MediaPipeService;
   private faceMesh: FaceMesh | null = null;
@@ -30,8 +45,15 @@ export class MediaPipeService {
 
   private async initFaceMesh() {
     try {
+      const origin = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : '';
       this.faceMesh = new FaceMesh({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        locateFile: (file) => {
+          // Serve from local Vite public assets for zero-latency, offline, and Brave ad-block immunity
+          if (origin) {
+            return `${origin}/mediapipe/face_mesh/${file}`;
+          }
+          return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+        }
       });
 
       this.faceMesh.setOptions({
@@ -60,7 +82,6 @@ export class MediaPipeService {
   }
 
   public getRawLandmarks(): NormalizedLandmarkList | null {
-    // If no detection within 800ms, consider lost
     if (performance.now() - this.lastSuccessTime > 800) {
       return null;
     }
@@ -82,57 +103,91 @@ export class MediaPipeService {
   }
 
   /**
-   * Convert MediaPipe 468 landmarks into the application's FaceDetectionResult
+   * Get scaled polygon points for a set of landmark indices
+   */
+  public getPolygonPoints(
+    indices: number[],
+    cw: number,
+    ch: number,
+    isMirrored: boolean = true
+  ): Array<{ x: number; y: number }> | null {
+    const lm = this.getRawLandmarks();
+    if (!lm) return null;
+    return indices.map(idx => {
+      const p = lm[idx] || { x: 0.5, y: 0.5 };
+      return {
+        x: (isMirrored ? (1 - p.x) : p.x) * cw,
+        y: p.y * ch
+      };
+    });
+  }
+
+  /**
+   * Convert MediaPipe 468 landmarks into application's FaceDetectionResult
+   * Accurately projects coordinates so the AR filter moves in 100% lockstep with head turns
    */
   public convertToDetectionResult(
     landmarks: NormalizedLandmarkList,
-    canvas: HTMLCanvasElement
+    canvas: HTMLCanvasElement,
+    isMirrored: boolean = true
   ): FaceDetectionResult {
     const cw = canvas.width;
     const ch = canvas.height;
 
-    // Key Landmark Indices from MediaPipe 468-point 3D topology:
-    // 10: Forehead top
-    // 152: Chin bottom
-    // 234: Left cheek outer
-    // 454: Right cheek outer
-    // 33: Left eye outer
-    // 133: Left eye inner
-    // 362: Right eye inner
-    // 263: Right eye outer
-    // 1: Nose tip
-    // 61: Mouth left corner
-    // 291: Mouth right corner
-    // 0: Upper lip center
-    // 17: Lower lip center
+    // Direct mirror coordinate transformation:
+    // In selfie mode, the video is rendered with ctx.scale(-1, 1), so screen x = (1 - rawX)
+    const tx = (rawX: number) => (isMirrored ? (1 - rawX) : rawX);
 
-    const pForehead = landmarks[10] || { x: 0.5, y: 0.2 };
-    const pChin = landmarks[152] || { x: 0.5, y: 0.9 };
-    const pLeftCheek = landmarks[234] || { x: 0.25, y: 0.55 };
-    const pRightCheek = landmarks[454] || { x: 0.75, y: 0.55 };
-    const pLeftEye = landmarks[159] || landmarks[33] || { x: 0.35, y: 0.38 };
-    const pRightEye = landmarks[386] || landmarks[263] || { x: 0.65, y: 0.38 };
-    const pNoseTip = landmarks[1] || { x: 0.5, y: 0.52 };
-    const pMouthLeft = landmarks[61] || { x: 0.38, y: 0.72 };
-    const pMouthRight = landmarks[291] || { x: 0.62, y: 0.72 };
-    const pMouthTop = landmarks[0] || { x: 0.5, y: 0.68 };
-    const pMouthBottom = landmarks[17] || { x: 0.5, y: 0.76 };
+    // Anatomical 3D landmark points in raw video:
+    const rawForehead = landmarks[10] || { x: 0.5, y: 0.2 };
+    const rawChin = landmarks[152] || { x: 0.5, y: 0.9 };
+    const rawNoseTip = landmarks[1] || { x: 0.5, y: 0.52 };
 
-    // Compute bounding box containing the facial landmarks
+    // Anatomical left vs right in MediaPipe:
+    // Anatomical left eye: 386 (upper), 263 (outer corner) - on image right in raw camera (rawX ~ 0.65)
+    // Anatomical right eye: 159 (upper), 33 (outer corner) - on image left in raw camera (rawX ~ 0.35)
+    // Anatomical left cheek: 454 (rawX ~ 0.75)
+    // Anatomical right cheek: 234 (rawX ~ 0.25)
+    // Anatomical mouth left: 291 (rawX ~ 0.62)
+    // Anatomical mouth right: 61 (rawX ~ 0.38)
+    const anatLeftEye = landmarks[386] || landmarks[263] || { x: 0.65, y: 0.38 };
+    const anatRightEye = landmarks[159] || landmarks[33] || { x: 0.35, y: 0.38 };
+    const anatLeftCheek = landmarks[454] || { x: 0.75, y: 0.55 };
+    const anatRightCheek = landmarks[234] || { x: 0.25, y: 0.55 };
+    const anatLeftMouth = landmarks[291] || { x: 0.62, y: 0.72 };
+    const anatRightMouth = landmarks[61] || { x: 0.38, y: 0.72 };
+    const anatTopMouth = landmarks[0] || { x: 0.5, y: 0.68 };
+    const anatBottomMouth = landmarks[17] || { x: 0.5, y: 0.76 };
+
+    // Feature assignment for screen-left vs screen-right:
+    // In mirrored selfie mode:
+    // - screen-left eye is the mirrored anatomical left eye: tx(anatLeftEye.x) = 1 - 0.65 = 0.35
+    // - screen-right eye is the mirrored anatomical right eye: tx(anatRightEye.x) = 1 - 0.35 = 0.65
+    // In unmirrored mode:
+    // - screen-left eye is the anatomical right eye (facing camera): tx(anatRightEye.x) = 0.35
+    // - screen-right eye is the anatomical left eye (facing camera): tx(anatLeftEye.x) = 0.65
+    const ptLeftEye = isMirrored ? anatLeftEye : anatRightEye;
+    const ptRightEye = isMirrored ? anatRightEye : anatLeftEye;
+    const ptLeftCheek = isMirrored ? anatLeftCheek : anatRightCheek;
+    const ptRightCheek = isMirrored ? anatRightCheek : anatLeftCheek;
+    const ptMouthLeft = isMirrored ? anatLeftMouth : anatRightMouth;
+    const ptMouthRight = isMirrored ? anatRightMouth : anatLeftMouth;
+
+    // Compute screen bounding box from all 468 landmarks
     let minX = 1;
     let maxX = 0;
     let minY = 1;
     let maxY = 0;
 
     for (let i = 0; i < landmarks.length; i++) {
-      const lm = landmarks[i];
-      if (lm.x < minX) minX = lm.x;
-      if (lm.x > maxX) maxX = lm.x;
-      if (lm.y < minY) minY = lm.y;
-      if (lm.y > maxY) maxY = lm.y;
+      const sx = tx(landmarks[i].x);
+      const sy = landmarks[i].y;
+      if (sx < minX) minX = sx;
+      if (sx > maxX) maxX = sx;
+      if (sy < minY) minY = sy;
+      if (sy > maxY) maxY = sy;
     }
 
-    // Add 8% padding for hair/chin boundaries
     const padX = (maxX - minX) * 0.08;
     const padY = (maxY - minY) * 0.08;
     const boxX = Math.max(0, minX - padX);
@@ -141,23 +196,23 @@ export class MediaPipeService {
     const boxH = Math.min(1 - boxY, (maxY - minY) + padY * 2);
 
     const faceLandmarks: FaceLandmarks = {
-      forehead: { x: Math.round(pForehead.x * 100), y: Math.round(pForehead.y * 100) },
-      leftEye: { x: Math.round(pLeftEye.x * 100), y: Math.round(pLeftEye.y * 100) },
-      rightEye: { x: Math.round(pRightEye.x * 100), y: Math.round(pRightEye.y * 100) },
-      noseTip: { x: Math.round(pNoseTip.x * 100), y: Math.round(pNoseTip.y * 100) },
-      leftCheek: { x: Math.round(pLeftCheek.x * 100), y: Math.round(pLeftCheek.y * 100) },
-      rightCheek: { x: Math.round(pRightCheek.x * 100), y: Math.round(pRightCheek.y * 100) },
+      forehead: { x: Math.round(tx(rawForehead.x) * 100), y: Math.round(rawForehead.y * 100) },
+      leftEye: { x: Math.round(tx(ptLeftEye.x) * 100), y: Math.round(ptLeftEye.y * 100) },
+      rightEye: { x: Math.round(tx(ptRightEye.x) * 100), y: Math.round(ptRightEye.y * 100) },
+      noseTip: { x: Math.round(tx(rawNoseTip.x) * 100), y: Math.round(rawNoseTip.y * 100) },
+      leftCheek: { x: Math.round(tx(ptLeftCheek.x) * 100), y: Math.round(ptLeftCheek.y * 100) },
+      rightCheek: { x: Math.round(tx(ptRightCheek.x) * 100), y: Math.round(ptRightCheek.y * 100) },
       mouthCenter: {
-        x: Math.round(((pMouthLeft.x + pMouthRight.x) * 0.5) * 100),
-        y: Math.round(((pMouthTop.y + pMouthBottom.y) * 0.5) * 100)
+        x: Math.round(tx((anatLeftMouth.x + anatRightMouth.x) * 0.5) * 100),
+        y: Math.round(((anatTopMouth.y + anatBottomMouth.y) * 0.5) * 100)
       },
       mouthBounds: {
-        x: Math.round(pMouthLeft.x * 100),
-        y: Math.round(pMouthTop.y * 100),
-        width: Math.round(Math.abs(pMouthRight.x - pMouthLeft.x) * 100),
-        height: Math.round(Math.abs(pMouthBottom.y - pMouthTop.y) * 100)
+        x: Math.round(Math.min(tx(ptMouthLeft.x), tx(ptMouthRight.x)) * 100),
+        y: Math.round(anatTopMouth.y * 100),
+        width: Math.round(Math.abs(tx(ptMouthRight.x) - tx(ptMouthLeft.x)) * 100),
+        height: Math.round(Math.abs(anatBottomMouth.y - anatTopMouth.y) * 100)
       },
-      chin: { x: Math.round(pChin.x * 100), y: Math.round(pChin.y * 100) }
+      chin: { x: Math.round(tx(rawChin.x) * 100), y: Math.round(rawChin.y * 100) }
     };
 
     // Sample colorimetry from center of cheek
@@ -169,8 +224,8 @@ export class MediaPipeService {
     try {
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        const sx = Math.floor(pNoseTip.x * cw);
-        const sy = Math.floor((pNoseTip.y + 0.05) * ch);
+        const sx = Math.floor(tx(rawNoseTip.x) * cw);
+        const sy = Math.floor((rawNoseTip.y + 0.05) * ch);
         const pixelData = ctx.getImageData(Math.max(0, sx - 5), Math.max(0, sy - 5), 10, 10).data;
         let sumR = 0;
         let sumG = 0;
@@ -199,7 +254,7 @@ export class MediaPipeService {
 
     return {
       detected: true,
-      confidence: 0.99, // Google MediaPipe Neural Network precision
+      confidence: 0.99,
       boundingBox: {
         x: Math.round(boxX * 100),
         y: Math.round(boxY * 100),
