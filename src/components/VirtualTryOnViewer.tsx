@@ -487,6 +487,14 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
     }
   };
 
+  // Auto-start webcam on mount when in motion_webcam mode
+  useEffect(() => {
+    if (activeMode === 'motion_webcam' && !isWebcamActive) {
+      startLiveCamera();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMode]);
+
   // CONTINUOUS LIVE SNAPCHAT & CLINICAL AR MOTION LOOP
   useEffect(() => {
     let isSubscribed = true;
@@ -1373,6 +1381,38 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
               style={{ filter: getLightingFilter() }}
             />
 
+            {/* Prompt to Start Camera if webcam mode selected but not active */}
+            {activeMode === 'motion_webcam' && !isWebcamActive && (
+              <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm z-30 flex flex-col items-center justify-center p-6 text-center space-y-3">
+                <Video className="w-10 h-10 text-pink-400 animate-pulse" />
+                <div>
+                  <h4 className="text-sm font-bold text-slate-100">Live Camera Ready</h4>
+                  <p className="text-xs text-slate-400 mt-1 max-w-xs">
+                    Allow camera access or tap below to start your webcam and try on AR beauty filters.
+                  </p>
+                </div>
+                <button
+                  onClick={startLiveCamera}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 active:scale-95 text-white font-bold text-xs shadow-lg shadow-pink-500/25 flex items-center gap-2 cursor-pointer transition-all"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>Start Live AR Camera</span>
+                </button>
+              </div>
+            )}
+
+            {/* Drag Range Slider Overlay (ONLY in split_compare mode) */}
+            {viewMode === 'split_compare' && (
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={sliderPos}
+                onChange={(e) => setSliderPos(Number(e.target.value))}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-20"
+              />
+            )}
+
             {/* Corner Badges */}
             <div className="absolute top-3 left-3 flex items-center space-x-2 z-10 pointer-events-none">
               <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-950/80 px-2 py-0.5 rounded text-slate-300 border border-slate-800">
@@ -1412,22 +1452,40 @@ export const VirtualTryOnViewer: React.FC<VTOViewerProps> = React.memo(({
           </div>
 
           {/* DOCKED AR ACTION & SNAP BAR (Non-obstructive placement) */}
-          <div className="flex items-center justify-between bg-slate-950/90 border border-slate-800 rounded-xl px-4 py-2.5 shadow-lg">
+          <div className="flex items-center justify-between bg-slate-950/90 border border-slate-800 rounded-xl px-4 py-2.5 shadow-lg flex-wrap gap-2">
             <div className="flex items-center space-x-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${liveFace?.detected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              <span className={`w-2.5 h-2.5 rounded-full ${isWebcamActive ? (liveFace?.detected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400') : 'bg-slate-500'}`} />
               <span className="text-xs font-semibold text-slate-300">
-                {liveFace?.detected ? `Face Locked (${Math.round((liveFace.confidence || 0.9) * 100)}%)` : 'Looking for Face...'}
+                {isWebcamActive
+                  ? (liveFace?.detected ? `Face Locked (${Math.round((liveFace.confidence || 0.9) * 100)}%)` : 'Scanning Face...')
+                  : 'Camera Paused'}
               </span>
             </div>
 
-            <button
-              onClick={handleSnapMotionPicture}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-pink-500 via-rose-500 to-amber-400 hover:from-pink-600 hover:to-rose-600 active:scale-95 text-white font-bold text-xs shadow-md shadow-pink-500/30 flex items-center gap-2 transition-all cursor-pointer ring-1 ring-white/20"
-              title="Capture Motion Snapshot with Active AR Lens"
-            >
-              <Camera className="w-4 h-4 text-white" />
-              <span>Capture Snapshot</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              {activeMode === 'motion_webcam' && (
+                <button
+                  onClick={isWebcamActive ? stopLiveCamera : startLiveCamera}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1.5 cursor-pointer ${
+                    isWebcamActive
+                      ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                      : 'bg-pink-500/20 border-pink-500/40 text-pink-300 hover:bg-pink-500/30'
+                  }`}
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span>{isWebcamActive ? 'Pause' : 'Turn On'}</span>
+                </button>
+              )}
+
+              <button
+                onClick={handleSnapMotionPicture}
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-pink-500 via-rose-500 to-amber-400 hover:from-pink-600 hover:to-rose-600 active:scale-95 text-white font-bold text-xs shadow-md shadow-pink-500/30 flex items-center gap-2 transition-all cursor-pointer ring-1 ring-white/20"
+                title="Capture Motion Snapshot with Active AR Lens"
+              >
+                <Camera className="w-4 h-4 text-white" />
+                <span>Capture Snapshot</span>
+              </button>
+            </div>
 
             <span className="text-[11px] font-mono text-slate-400">
               {snappedPhotos.length > 0 ? `${snappedPhotos.length} snapped` : 'Live AR'}

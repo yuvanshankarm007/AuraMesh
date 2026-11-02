@@ -81,24 +81,26 @@ export class FaceDetectionEngine {
 
   /**
    * Check if an RGB pixel falls within the human skin chrominance cluster
-   * Rejects flat wall paint, wooden doors, and desaturated backgrounds
+   * Accommodates Fitzpatrick I-VI while rejecting neutral wall paint
    */
   private isSkinPixel(r: number, g: number, b: number): boolean {
     const y = 0.299 * r + 0.587 * g + 0.114 * b;
     const cb = -0.168736 * r - 0.331264 * g + 0.5 * b + 128;
     const cr = 0.5 * r - 0.418688 * g - 0.081312 * b + 128;
 
-    // Luminance bounds: exclude deep shadows and high glare
-    if (y < 35 || y > 245) return false;
+    // Luminance bounds: exclude deep shadows (< 25) and high glare (> 248)
+    if (y < 25 || y > 248) return false;
 
-    // Human skin requires distinct red dominance over green and blue (due to dermal hemoglobin).
-    // Beige walls/cabinets have r ~= g (e.g. 210 vs 205). Skin has r - g >= 10.
-    if (r <= g || r <= b) return false;
-    if (r - g < 10) return false;
-    if (Math.max(r, g, b) - Math.min(r, g, b) < 15) return false;
+    // Human skin requires red dominance over green and blue (due to dermal hemoglobin).
+    // Beige walls/cabinets have r ~= g (e.g. 210 vs 205). Skin has r - g >= 8.
+    if (r <= g || r < b) return false;
+    if (r - g < 8) return false;
 
-    // Dermatological YCbCr skin ellipse
-    return cb >= 77 && cb <= 135 && cr >= 130 && cr <= 175;
+    // Dermatological YCbCr skin ellipse (Fitzpatrick I-VI)
+    const ycbcrPass = cb >= 68 && cb <= 145 && cr >= 123 && cr <= 185;
+    const rgbPass = r > 35 && (r + g) > (1.75 * b);
+
+    return ycbcrPass && rgbPass;
   }
 
   /**
@@ -271,90 +273,118 @@ export class FaceDetectionEngine {
       }
     }
 
-    // 2. High-Precision Computer Vision Cluster Analysis
-    let skinCount = 0;
-    let sumX = 0;
-    let sumY = 0;
-    let sumSqX = 0;
-    let sumSqY = 0;
+    // 2. High-Precision Spatial Density Search (Locates the human face even off-center or in corners)
+    const gridSize = 16;
+    const cellW = sw / gridSize;
+    const cellH = sh / gridSize;
+    const cellCounts: number[][] = Array.from({ length: gridSize }, () => new Array(gridSize).fill(0));
 
+    let totalSkinCount = 0;
     for (let y = 0; y < sh; y++) {
+      const gy = Math.min(gridSize - 1, Math.floor(y / cellH));
       for (let x = 0; x < sw; x++) {
+        const gx = Math.min(gridSize - 1, Math.floor(x / cellW));
         const idx = (y * sw + x) * 4;
         const r = data[idx];
         const g = data[idx + 1];
         const b = data[idx + 2];
 
         if (this.isSkinPixel(r, g, b)) {
-          skinCount++;
-          sumX += x;
-          sumY += y;
-          sumSqX += x * x;
-          sumSqY += y * y;
+          cellCounts[gy][gx]++;
+          totalSkinCount++;
         }
       }
     }
 
-    // Reject empty rooms (< 100 skin pixels) or camera completely blocked by uniform wall (> 17500 pixels)
-    if (skinCount < 100 || skinCount > 17500) {
+    // Find peak skin density cell (center of localized facial concentration)
+    let maxCellCount = 0;
+    let peakGx = 8;
+    let peakGy = 8;
+    for (let gy = 0; gy < gridSize; gy++) {
+      for (let gx = 0; gx < gridSize; gx++) {
+        let neighborhood = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const ny = gy + dy;
+            const nx = gx + dx;
+            if (ny >= 0 && ny < gridSize && nx >= 0 && nx < gridSize) {
+              neighborhood += cellCounts[ny][nx];
+            }
+          }
+        }
+        if (neighborhood > maxCellCount) {
+          maxCellCount = neighborhood;
+          peakGx = gx;
+          peakGy = gy;
+        }
+      }
+    }
+
+    // If max neighborhood density is too low (< 28 skin pixels in a 30x30 region), no face is in view
+    if (maxCellCount < 28 || totalSkinCount > 22000) {
       this.prevBox = null;
       return this.createFallbackResult(false, avgLux);
     }
 
-    const meanX = sumX / skinCount;
-    const meanY = sumY / skinCount;
-    const varX = Math.max(16, (sumSqX / skinCount) - (meanX * meanX));
-    const varY = Math.max(25, (sumSqY / skinCount) - (meanY * meanY));
+    // Compute localized cluster center around peak (within 3 cells radius)
+    let localSumX = 0;
+    let localSumY = 0;
+    let localSumSqX = 0;
+    let localSumSqY = 0;
+    let localCount = 0;
+
+    const rad = 3;
+    const minGx = Math.max(0, peakGx - rad);
+    const maxGx = Math.min(gridSize - 1, peakGx + rad);
+    const minGy = Math.max(0, peakGy - rad);
+    const maxGy = Math.min(gridSize - 1, peakGy + rad);
+
+    for (let gy = minGy; gy <= maxGy; gy++) {
+      for (let gx = minGx; gx <= maxGx; gx++) {
+        const startY = Math.floor(gy * cellH);
+        const endY = Math.floor((gy + 1) * cellH);
+        const startX = Math.floor(gx * cellW);
+        const endX = Math.floor((gx + 1) * cellW);
+
+        for (let y = startY; y < endY; y++) {
+          for (let x = startX; x < endX; x++) {
+            const idx = (y * sw + x) * 4;
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+            if (this.isSkinPixel(r, g, b)) {
+              localCount++;
+              localSumX += x;
+              localSumY += y;
+              localSumSqX += x * x;
+              localSumSqY += y * y;
+            }
+          }
+        }
+      }
+    }
+
+    if (localCount < 25) {
+      this.prevBox = null;
+      return this.createFallbackResult(false, avgLux);
+    }
+
+    const meanX = localSumX / localCount;
+    const meanY = localSumY / localCount;
+    const varX = Math.max(20, (localSumSqX / localCount) - (meanX * meanX));
+    const varY = Math.max(30, (localSumSqY / localCount) - (meanY * meanY));
     const stdX = Math.sqrt(varX);
     const stdY = Math.sqrt(varY);
 
-    if (stdX < 8 || stdY < 10) {
-      this.prevBox = null;
-      return this.createFallbackResult(false, avgLux);
-    }
+    let targetW = Math.max(0.24, Math.min(0.68, (stdX * 3.4) / sw));
+    let targetH = Math.max(0.32, Math.min(0.82, (stdY * 3.6) / sh));
 
-    let targetW = Math.max(0.25, Math.min(0.68, (stdX * 3.2) / sw));
-    let targetH = Math.max(0.32, Math.min(0.82, (stdY * 3.4) / sh));
-
-    // Strictly lock to human portrait anatomical ratio (1.15 - 1.55)
+    // Lock to human portrait ratio (1.15 - 1.55)
     if (targetH / targetW < 1.15) targetH = targetW * 1.25;
-    if (targetH / targetW > 1.55) targetW = targetH / 1.35;
+    if (targetH / targetW > 1.55) targetW = targetH * 1.35;
 
     let targetX = Math.max(0.04, Math.min(0.96 - targetW, (meanX / sw) - targetW * 0.5));
     let targetY = Math.max(0.04, Math.min(0.96 - targetH, (meanY / sh) - targetH * 0.46));
-
-    // 3. Contrast & Texture Validation (Rejects flat walls and wooden doors)
-    const px0 = Math.floor(targetX * sw);
-    const py0 = Math.floor(targetY * sh);
-    const pw = Math.floor(targetW * sw);
-    const ph = Math.floor(targetH * sh);
-
-    let boxLumSum = 0;
-    let boxLumSqSum = 0;
-    let boxSamples = 0;
-
-    for (let py = py0; py < py0 + ph; py += 2) {
-      for (let px = px0; px < px0 + pw; px += 2) {
-        if (px >= 0 && px < sw && py >= 0 && py < sh) {
-          const idx = (py * sw + px) * 4;
-          const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-          boxLumSum += lum;
-          boxLumSqSum += lum * lum;
-          boxSamples++;
-        }
-      }
-    }
-
-    const meanBoxLum = boxLumSum / (boxSamples || 1);
-    const varBoxLum = Math.max(0, (boxLumSqSum / (boxSamples || 1)) - (meanBoxLum * meanBoxLum));
-    const stdBoxLum = Math.sqrt(varBoxLum);
-
-    // Wall/Cupboard Rejection: A flat painted wall or wooden cupboard door has stdBoxLum < 8.
-    // Real human faces have eyes, eyebrows, hair boundary, and nostrils with stdBoxLum >= 8.5.
-    if (stdBoxLum < 8.5) {
-      this.prevBox = null;
-      return this.createFallbackResult(false, avgLux);
-    }
 
     // Temporal Exponential Moving Average (Anti-jitter filter)
     let boxX = targetX;
@@ -370,7 +400,7 @@ export class FaceDetectionEngine {
     }
     this.prevBox = { x: boxX, y: boxY, w: boxW, h: boxH };
 
-    const confidence = Math.min(0.96, Math.max(0.72, 0.70 + (stdBoxLum / 80)));
+    const confidence = Math.min(0.96, Math.max(0.72, 0.70 + (maxCellCount / 180)));
     return this.buildResult(true, confidence, boxX, boxY, boxW, boxH, data, sw, sh, avgLux);
   }
 
