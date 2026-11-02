@@ -1,12 +1,21 @@
 import React from 'react';
-import { FormulationPlan } from '../agent-core/types';
+import { FormulationPlan, WhatIfSwapOption } from '../agent-core/types';
 import { Beaker, Sun, Moon, AlertCircle } from 'lucide-react';
+import { WhatIfMatrixDrawer } from './WhatIfMatrixDrawer';
 
 interface RoutineProps {
   formulation?: FormulationPlan;
+  whatIfSwaps?: WhatIfSwapOption[];
+  onTriggerSwap?: (swapId: string) => void;
+  synergyScore?: number;
 }
 
-const FormulationRoutineViewComponent: React.FC<RoutineProps> = ({ formulation }) => {
+const FormulationRoutineViewComponent: React.FC<RoutineProps> = ({
+  formulation,
+  whatIfSwaps,
+  onTriggerSwap,
+  synergyScore
+}) => {
   if (!formulation) {
     return (
       <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-sm flex flex-col items-center justify-center h-[340px] text-slate-500 text-xs">
@@ -86,6 +95,15 @@ const FormulationRoutineViewComponent: React.FC<RoutineProps> = ({ formulation }
           {formulation.contraindicationsAvoided.join(', ')} (preventing barrier destruction).
         </div>
       </div>
+
+      {/* Interactive What-If Active Sandbox & Synergy Matrix */}
+      {onTriggerSwap && (
+        <WhatIfMatrixDrawer
+          activeSwaps={whatIfSwaps}
+          onTriggerSwap={onTriggerSwap}
+          synergyScore={synergyScore}
+        />
+      )}
     </div>
   );
 };

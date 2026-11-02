@@ -34,7 +34,8 @@ export class ConvergenceMonitor extends BaseAgent {
     if (
       msg.topic === 'CLINICAL_SAFETY_VETO' ||
       (msg.topic === 'BUDGET_EXCEEDED_SUBSTITUTION_REQUEST' &&
-        msg.payload?.candidates?.some((c: any) => c.type === 'DROP_SPF'))
+        msg.payload?.candidates?.some((c: any) => c.type === 'DROP_SPF')) ||
+      (msg.topic === 'WHAT_IF_INGREDIENT_SWAP_REQUEST' && msg.payload?.isConflicting)
     ) {
       this.bus.updateState((prev) => ({
         governance: {

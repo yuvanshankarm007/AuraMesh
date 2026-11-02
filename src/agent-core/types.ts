@@ -139,6 +139,87 @@ export interface GovernanceMetrics {
   vectorClock: number;
 }
 
+// ============================================================================
+// Environmental & Climate Telemetry Models
+// ============================================================================
+export interface ClimateContext {
+  id: string;
+  name: string;
+  city: string;
+  uvIndex: number;         // 0 - 14 (Extreme)
+  humidity: number;        // 0 - 100%
+  aqi: number;             // Air Quality Index (0 - 500 PM2.5)
+  temperatureC: number;    // Celsius
+  season: 'summer' | 'winter' | 'monsoon' | 'arid_heat';
+  description: string;
+  stressLevel: 'low' | 'moderate' | 'high' | 'critical';
+}
+
+// ============================================================================
+// Active Synergy & Conflict Engine Models
+// ============================================================================
+export type InteractionType = 'SYNERGY' | 'COMPATIBLE' | 'CONFLICT' | 'PHOTO_SENSITIZING';
+
+export interface ActiveInteraction {
+  ingredientA: string;
+  ingredientB: string;
+  type: InteractionType;
+  severity: 'mild' | 'moderate' | 'severe' | 'optimal';
+  clinicalDescription: string;
+  actionTaken: 'BOOST_SCORE' | 'BUFFER_WITH_CERAMIDES' | 'PROHIBIT_SIMULTANEOUS' | 'MANDATE_DAYTIME_SPF';
+}
+
+export interface WhatIfSwapOption {
+  id: string;
+  currentActive: string;
+  targetActive: string;
+  swapRationale: string;
+  costDelta: number;
+  barrierSafetyScore: number; // 0 - 100
+  targetSkinGoal: string;
+  applied?: boolean;
+}
+
+// ============================================================================
+// Interactive Split-Screen & Multi-Layer VTO Models
+// ============================================================================
+export type LightingMode = 'daylight' | 'golden_hour' | 'office_fluorescent' | 'evening_lounge';
+
+export interface VTOComparisonSettings {
+  sliderPosition: number; // 0 - 100%
+  activeLayers: {
+    showDiagnosticHeatmap: boolean;
+    showSkincareSmoothing: boolean;
+    showCosmeticMakeup: boolean;
+  };
+  lightingMode: LightingMode;
+  deltaEConfidence: number;
+}
+
+// ============================================================================
+// Subscription & Replenishment Adherence Models
+// ============================================================================
+export interface DepletionTimelineItem {
+  productId: string;
+  productName: string;
+  bottleVolumeMl: number;
+  dailyDosageMl: number;
+  daysToDepletion: number;
+  depletionDateStr: string;
+  urgency: 'safe' | 'refill_approaching' | 'exhausted';
+  suggestedRefillCadenceDays: 30 | 45 | 60 | 90;
+}
+
+export interface ReplenishmentPlan {
+  isSubscriptionActive: boolean;
+  subscriptionDiscountPct: number;
+  recurringMonthlyTotal: number;
+  annualSavings: number;
+  clinicAvoidanceValue: number;
+  churnRelapseRiskPct: number;
+  schedule: DepletionTimelineItem[];
+}
+
 // Global Multi-Agent Shared Session State
 export interface MultiAgentState {
   sessionId: string;
@@ -151,6 +232,15 @@ export interface MultiAgentState {
   formulation?: FormulationPlan;
   aesthetic?: AestheticPlan;
   cart?: SmartBundle;
+  climate?: ClimateContext;
+  whatIfEngine?: {
+    activeSwaps: WhatIfSwapOption[];
+    activeConflicts: ActiveInteraction[];
+    synergyScore: number;
+    selectedSwapId?: string;
+  };
+  vtoComparison?: VTOComparisonSettings;
+  replenishment?: ReplenishmentPlan;
   negotiationRounds: number;
   governance: GovernanceMetrics;
   activeEdges: Array<{ from: AgentRole; to: AgentRole; intent: MessageIntent; timestamp: number }>;

@@ -1,4 +1,5 @@
 import { AgentMessage, AgentRole, MultiAgentState } from './types';
+import { DEMO_CLIMATES, ACTIVE_INTERACTIONS_MATRIX, WHAT_IF_SWAP_OPTIONS } from '../data/demoSeed';
 
 export type MessageSubscriber = (msg: AgentMessage) => void | Promise<void>;
 export type StateSubscriber = (state: MultiAgentState) => void;
@@ -24,6 +25,23 @@ export class AgentEventBus {
       deadlocksPrevented: 0,
       safetyVetoesIssued: 0,
       vectorClock: 0
+    },
+    climate: DEMO_CLIMATES[0],
+    whatIfEngine: {
+      activeSwaps: WHAT_IF_SWAP_OPTIONS,
+      activeConflicts: ACTIVE_INTERACTIONS_MATRIX,
+      synergyScore: 92,
+      selectedSwapId: undefined
+    },
+    vtoComparison: {
+      sliderPosition: 50,
+      activeLayers: {
+        showDiagnosticHeatmap: true,
+        showSkincareSmoothing: true,
+        showCosmeticMakeup: true
+      },
+      lightingMode: 'daylight',
+      deltaEConfidence: 0.96
     },
     activeEdges: [],
     messageHistory: []
@@ -184,6 +202,23 @@ export class AgentEventBus {
         deadlocksPrevented: 0,
         safetyVetoesIssued: 0,
         vectorClock: 0
+      },
+      climate: this.state.climate || DEMO_CLIMATES[0],
+      whatIfEngine: {
+        activeSwaps: WHAT_IF_SWAP_OPTIONS,
+        activeConflicts: ACTIVE_INTERACTIONS_MATRIX,
+        synergyScore: 92,
+        selectedSwapId: undefined
+      },
+      vtoComparison: {
+        sliderPosition: 50,
+        activeLayers: {
+          showDiagnosticHeatmap: true,
+          showSkincareSmoothing: true,
+          showCosmeticMakeup: true
+        },
+        lightingMode: 'daylight',
+        deltaEConfidence: 0.96
       },
       activeEdges: [],
       messageHistory: []

@@ -1,4 +1,5 @@
 import { PRODUCT_CATALOG } from '../data/catalog';
+import { generateReplenishmentPlan } from '../data/demoSeed';
 import { BaseAgent } from './BaseAgent';
 import { AgentEventBus } from './eventBus';
 import { AgentMessage, ProductItem, SmartBundle } from './types';
@@ -85,6 +86,48 @@ export class CommerceSpecialist extends BaseAgent {
       // Broadcast Consensus
       await this.finalizeConsensus(optimizedBundle, msg);
     }
+
+    // 3. Process What-If Active Trade-off
+    else if (msg.topic === 'WHAT_IF_TRADE_OFF_APPLIED') {
+      const { swap, applied } = msg.payload;
+      const currentCart = this.bus.getState().cart;
+      if (!currentCart) return;
+
+      const fromId = swap.id === 'swap_retinol_bakuchiol'
+        ? (applied ? 'prod_retinol_encap' : 'prod_retinol_dupe')
+        : (applied ? 'prod_vto_tint_olive' : 'prod_tint_budget');
+      const toId = swap.id === 'swap_retinol_bakuchiol'
+        ? (applied ? 'prod_retinol_dupe' : 'prod_retinol_encap')
+        : (applied ? 'prod_tint_budget' : 'prod_vto_tint_olive');
+
+      const replacementItem = PRODUCT_CATALOG.find(p => p.id === toId);
+      if (replacementItem) {
+        const updatedItems = currentCart.items.map(item => item.id === fromId ? replacementItem : item);
+        const subtotal = updatedItems.reduce((sum, i) => sum + i.price, 0);
+        const discount = subtotal * 0.15;
+        const total = subtotal - discount;
+
+        const updatedBundle: SmartBundle = {
+          items: updatedItems,
+          subtotal,
+          bundleDiscount: discount,
+          total,
+          budgetCeiling,
+          savings: discount,
+          isWithinBudget: total <= budgetCeiling,
+          substitutionHistory: [
+            ...currentCart.substitutionHistory,
+            `What-If Swap ${applied ? 'Applied' : 'Reverted'}: ${swap.currentActive} ⇄ ${swap.targetActive}`
+          ]
+        };
+
+        const replenishment = generateReplenishmentPlan(updatedItems);
+        this.bus.updateState(() => ({
+          cart: updatedBundle,
+          replenishment
+        }));
+      }
+    }
   }
 
   private generateSubstitutionCandidates(items: ProductItem[]): any[] {
@@ -157,8 +200,10 @@ export class CommerceSpecialist extends BaseAgent {
   }
 
   private async finalizeConsensus(bundle: SmartBundle, parentMsg: AgentMessage) {
+    const replenishment = generateReplenishmentPlan(bundle.items);
     this.bus.updateState(() => ({
-      currentStep: 'CONSENSUS_REACHED'
+      currentStep: 'CONSENSUS_REACHED',
+      replenishment
     }));
 
     await this.broadcast(

@@ -114,6 +114,82 @@ export class FormulationSpecialist extends BaseAgent {
         );
       }
     }
+
+    // 3. Process What-If Active Swap Request from UI/User
+    else if (msg.topic === 'WHAT_IF_INGREDIENT_SWAP_REQUEST') {
+      const { swapId } = msg.payload;
+      const state = this.bus.getState();
+      const swaps = state.whatIfEngine?.activeSwaps || [];
+      const selectedSwap = swaps.find(s => s.id === swapId);
+
+      if (selectedSwap) {
+        const isCurrentlyApplied = !!selectedSwap.applied;
+        const newApplied = !isCurrentlyApplied;
+
+        this.bus.updateState((prev) => ({
+          whatIfEngine: {
+            ...prev.whatIfEngine!,
+            selectedSwapId: newApplied ? swapId : undefined,
+            synergyScore: newApplied ? 96 : 92,
+            activeSwaps: prev.whatIfEngine!.activeSwaps.map(s =>
+              s.id === swapId ? { ...s, applied: newApplied } : s
+            )
+          }
+        }));
+
+        // Handshake: Formulation -> Commerce Specialist
+        await this.sendPeer(
+          'agent.specialist.commerce',
+          'Commercial & Cart Concierge Agent',
+          'PROPOSE',
+          'WHAT_IF_TRADE_OFF_APPLIED',
+          {
+            swap: selectedSwap,
+            applied: newApplied
+          },
+          `What-If Active Formulation: ${newApplied ? 'Applied' : 'Reverted'} swap (${selectedSwap.currentActive} ⇄ ${selectedSwap.targetActive}). Cost delta: $${selectedSwap.costDelta.toFixed(2)}. Barrier safety score: ${selectedSwap.barrierSafetyScore}/100.`,
+          msg
+        );
+      }
+    }
+
+    // 4. Process Environmental Climate Telemetry
+    else if (msg.topic === 'ENVIRONMENTAL_EXPOSURE_UPDATE') {
+      const { climate } = msg.payload;
+      this.bus.updateState(() => ({ climate }));
+
+      // If high UV or extreme humidity, adapt formulation vehicle
+      if (climate.uvIndex >= 7 || climate.humidity < 25 || climate.humidity > 80) {
+        this.bus.updateState((prev) => {
+          if (!prev.formulation) return {};
+          return {
+            formulation: {
+              ...prev.formulation,
+              barrierProtocol: climate.uvIndex >= 7
+                ? 'High Solar Radiation & Photostability Defense Protocol'
+                : climate.humidity < 25
+                  ? 'Intense TEWL Occlusion & Cold Shield Protocol'
+                  : 'High Humidity Sebum Control & Water-Gel Protocol',
+              vehicleTextureRequirement: climate.humidity > 80 ? 'lightweight_water_gel' : 'rich_ceramide_cream'
+            }
+          };
+        });
+
+        // Notify Stylist Specialist to adapt cosmetic finish
+        await this.sendPeer(
+          'agent.specialist.stylist',
+          'Aesthetic & VTO Stylist Agent',
+          'INFORM',
+          'CLIMATE_FORMULATION_OVERRIDE',
+          {
+            climate,
+            finishRecommendation: climate.humidity > 70 ? 'soft_natural_matte' : 'hydrating_dewy'
+          },
+          `Climate Adaptation: Due to ${climate.name} (UV: ${climate.uvIndex}, Humidity: ${climate.humidity}%), updated skin defense protocol and cosmetic finish.`,
+          msg
+        );
+      }
+    }
   }
 
   private generateTargetedFormulation(scores: any): FormulationPlan {

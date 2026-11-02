@@ -7,11 +7,12 @@ import { FormulationSpecialist } from './agent-core/FormulationSpecialist';
 import { StylistSpecialist } from './agent-core/StylistSpecialist';
 import { CommerceSpecialist } from './agent-core/CommerceSpecialist';
 import { YouCamGatewayWorker } from './agent-core/YouCamGatewayWorker';
-import { MultiAgentState } from './agent-core/types';
+import { MultiAgentState, ClimateContext } from './agent-core/types';
 import { DEMO_PERSONAS, DemoPersona } from './data/personas';
 
 import { Header } from './components/Header';
 import { PersonaSelector } from './components/PersonaSelector';
+import { EnvironmentClimateBar } from './components/EnvironmentClimateBar';
 import { AgentWebVisualizer } from './components/AgentWebVisualizer';
 import { LiveAgentLog } from './components/LiveAgentLog';
 import { SkinAnalysisRadar } from './components/SkinAnalysisRadar';
@@ -100,6 +101,57 @@ export const App: React.FC = () => {
     bus.setExecutionSpeed(nextSpeed);
   };
 
+  const handleSelectClimate = async (climate: ClimateContext) => {
+    bus.updateState(() => ({ climate }));
+    if (dermaRef.current) {
+      await dermaRef.current.handleMessage({
+        messageId: 'msg_climate_' + Date.now(),
+        correlationId: bus.getState().sessionId,
+        timestamp: Date.now(),
+        hopCount: 1,
+        sender: {
+          role: 'agent.specialist.derma',
+          tier: 2,
+          label: 'Dermatology Diagnostic Agent'
+        },
+        recipient: {
+          role: 'agent.specialist.derma',
+          tier: 2,
+          label: 'Dermatology Diagnostic Agent'
+        },
+        intent: 'INFORM',
+        topic: 'UPDATE_CLIMATE_TELEMETRY',
+        payload: { climate },
+        explanation: `User triggered climate environment update: ${climate.name} (UV: ${climate.uvIndex}, Humidity: ${climate.humidity}%)`
+      });
+    }
+  };
+
+  const handleTriggerWhatIfSwap = async (swapId: string) => {
+    if (formulaRef.current) {
+      await formulaRef.current.handleMessage({
+        messageId: 'msg_swap_' + Date.now(),
+        correlationId: bus.getState().sessionId,
+        timestamp: Date.now(),
+        hopCount: 1,
+        sender: {
+          role: 'agent.specialist.formulation',
+          tier: 2,
+          label: 'Pharmacology Formulation Agent'
+        },
+        recipient: {
+          role: 'agent.specialist.formulation',
+          tier: 2,
+          label: 'Pharmacology Formulation Agent'
+        },
+        intent: 'PROPOSE',
+        topic: 'WHAT_IF_INGREDIENT_SWAP_REQUEST',
+        payload: { swapId },
+        explanation: `User toggled What-If Active ingredient swap (${swapId}). Re-negotiating clinical compatibility and basket pricing.`
+      });
+    }
+  };
+
   const handleSaveApiKey = (_key: string) => {
     setIsSimulated(worker.isMockMode());
   };
@@ -124,6 +176,12 @@ export const App: React.FC = () => {
           onSelectPersona={triggerPersonaRun}
           onCustomScenario={handleCustomScenario}
           isRunning={agentState.currentStep === 'ANALYZING'}
+        />
+
+        {/* Environmental & Climate Telemetry Bar */}
+        <EnvironmentClimateBar
+          currentClimate={agentState.climate}
+          onSelectClimate={handleSelectClimate}
         />
 
         {/* Row 2: Bidirectional Web Topology Visualizer & Message Bus */}
@@ -155,10 +213,18 @@ export const App: React.FC = () => {
         {/* Row 4: Pharmacological Regimen & Smart Optimized Basket */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-6">
-            <FormulationRoutineView formulation={agentState.formulation} />
+            <FormulationRoutineView
+              formulation={agentState.formulation}
+              whatIfSwaps={agentState.whatIfEngine?.activeSwaps}
+              onTriggerSwap={handleTriggerWhatIfSwap}
+              synergyScore={agentState.whatIfEngine?.synergyScore}
+            />
           </div>
           <div className="lg:col-span-6">
-            <SmartCartView cart={agentState.cart} />
+            <SmartCartView
+              cart={agentState.cart}
+              replenishment={agentState.replenishment}
+            />
           </div>
         </div>
 

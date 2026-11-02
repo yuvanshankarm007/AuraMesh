@@ -36,6 +36,20 @@ export class StylistSpecialist extends BaseAgent {
         `Aesthetic Look Lock: Selected ${undertone.toUpperCase()} shade match (${aestheticPlan.vtoLooks[0].shadeName}) and terracotta multi-tint blush. Passing to cart for stock & bundle pricing.`,
         msg
       );
+    } else if (msg.topic === 'CLIMATE_FORMULATION_OVERRIDE') {
+      const { finishRecommendation } = msg.payload;
+      this.bus.updateState((prev) => {
+        if (!prev.aesthetic) return {};
+        const updatedLooks = prev.aesthetic.vtoLooks.map(l =>
+          l.category === 'foundation' ? { ...l, finish: finishRecommendation } : l
+        );
+        return {
+          aesthetic: {
+            ...prev.aesthetic,
+            vtoLooks: updatedLooks
+          }
+        };
+      });
     }
   }
 

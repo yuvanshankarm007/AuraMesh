@@ -294,4 +294,100 @@ describe('Multi-Agent Bidirectional Web Architecture — Comprehensive Test Suit
       });
     });
   });
+
+  // ==========================================
+  // SUITE 7: Next-Generation Features
+  // ==========================================
+  describe('Suite 7: Next-Generation Features (Climate, What-If & Subscription)', () => {
+    it('Case 7.1: Environmental Climate Telemetry (UV 11 forces photostability protocol)', async () => {
+      const maya = DEMO_PERSONAS[0];
+      await ceo.startMission(maya.userGoal, maya.budget, maya.avatarUrl, maya.diagnostics);
+
+      const desertClimate = {
+        id: 'climate_desert_arid',
+        name: 'High UV Desert (Arid Summer)',
+        city: 'Phoenix / Dubai',
+        uvIndex: 11,
+        humidity: 16,
+        aqi: 48,
+        temperatureC: 39,
+        season: 'arid_heat' as const,
+        description: 'Extreme solar radiation with severe TEWL risk.',
+        stressLevel: 'critical' as const
+      };
+
+      await derma.handleMessage({
+        messageId: 'test_climate_msg',
+        correlationId: bus.getState().sessionId,
+        timestamp: Date.now(),
+        hopCount: 1,
+        sender: { role: 'agent.specialist.derma', tier: 2, label: 'Dermatology Diagnostic Agent' },
+        recipient: { role: 'agent.specialist.derma', tier: 2, label: 'Dermatology Diagnostic Agent' },
+        intent: 'INFORM',
+        topic: 'UPDATE_CLIMATE_TELEMETRY',
+        payload: { climate: desertClimate },
+        explanation: 'Testing extreme UV trigger'
+      });
+
+      const state = bus.getState();
+      expect(state.climate?.uvIndex).toBe(11);
+      expect(state.formulation?.barrierProtocol).toContain('Photostability Defense Protocol');
+    });
+
+    it('Case 7.2: What-If Active Swap (Retinal 0.05% -> Bakuchiol 2% updates cart and synergy)', async () => {
+      const elena = DEMO_PERSONAS[1];
+      await ceo.startMission(elena.userGoal, elena.budget, elena.avatarUrl, elena.diagnostics);
+
+      const initialCartTotal = bus.getState().cart?.total || 0;
+
+      await formula.handleMessage({
+        messageId: 'test_swap_msg',
+        correlationId: bus.getState().sessionId,
+        timestamp: Date.now(),
+        hopCount: 1,
+        sender: { role: 'agent.specialist.formulation', tier: 2, label: 'Pharmacology Formulation Agent' },
+        recipient: { role: 'agent.specialist.formulation', tier: 2, label: 'Pharmacology Formulation Agent' },
+        intent: 'PROPOSE',
+        topic: 'WHAT_IF_INGREDIENT_SWAP_REQUEST',
+        payload: { swapId: 'swap_retinol_bakuchiol' },
+        explanation: 'Testing What-If swap'
+      });
+
+      const updatedState = bus.getState();
+      const swap = updatedState.whatIfEngine?.activeSwaps.find(s => s.id === 'swap_retinol_bakuchiol');
+      expect(swap?.applied).toBe(true);
+      expect(updatedState.whatIfEngine?.synergyScore).toBe(96);
+      expect(updatedState.cart?.items.some(i => i.id === 'prod_retinol_dupe')).toBe(true);
+      expect(updatedState.cart?.total).toBeLessThan(initialCartTotal);
+    });
+
+    it('Case 7.3: Subscription Replenishment Engine calculates realistic schedules', async () => {
+      const jordan = DEMO_PERSONAS[2];
+      await ceo.startMission(jordan.userGoal, jordan.budget, jordan.avatarUrl, jordan.diagnostics);
+
+      const state = bus.getState();
+      expect(state.replenishment).toBeDefined();
+      expect(state.replenishment?.isSubscriptionActive).toBe(true);
+      expect(state.replenishment?.schedule.length).toBeGreaterThan(0);
+      expect(state.replenishment?.annualSavings).toBeGreaterThan(0);
+      expect(state.replenishment?.clinicAvoidanceValue).toBe(380);
+    });
+
+    it('Case 7.4: Extended Personas (Chloe, Marcus, Sophia) reach multi-agent consensus', async () => {
+      // Chloe Dubois (Melasma & High UV, Fitzpatrick 4)
+      const chloe = DEMO_PERSONAS[3];
+      await ceo.startMission(chloe.userGoal, chloe.budget, chloe.avatarUrl, chloe.diagnostics);
+      expect(['CONSENSUS_REACHED', 'CHECKOUT_READY']).toContain(bus.getState().currentStep);
+
+      // Marcus Vance (Sebum & Razor Folliculitis, Fitzpatrick 5)
+      const marcus = DEMO_PERSONAS[4];
+      await ceo.startMission(marcus.userGoal, marcus.budget, marcus.avatarUrl, marcus.diagnostics);
+      expect(['CONSENSUS_REACHED', 'CHECKOUT_READY']).toContain(bus.getState().currentStep);
+
+      // Sophia Kim (Atmospheric Smog Defense & Glass Skin)
+      const sophia = DEMO_PERSONAS[5];
+      await ceo.startMission(sophia.userGoal, sophia.budget, sophia.avatarUrl, sophia.diagnostics);
+      expect(['CONSENSUS_REACHED', 'CHECKOUT_READY']).toContain(bus.getState().currentStep);
+    });
+  });
 });

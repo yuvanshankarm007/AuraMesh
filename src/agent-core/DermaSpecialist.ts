@@ -38,6 +38,17 @@ export class DermaSpecialist extends BaseAgent {
         `Clinical Findings: Acne score ${scores.acne}/100, Redness ${scores.redness}/100, Pores ${scores.pores}/100. Barrier is ${scores.barrierHealth}. Dispatching active ingredient requirements.`,
         msg
       );
+    } else if (msg.topic === 'UPDATE_CLIMATE_TELEMETRY') {
+      const { climate } = msg.payload;
+      await this.sendPeer(
+        'agent.specialist.formulation',
+        'Pharmacology Formulation Agent',
+        'INFORM',
+        'ENVIRONMENTAL_EXPOSURE_UPDATE',
+        { climate },
+        `Climate Telemetry: Sensor reports UV Index ${climate.uvIndex}, Humidity ${climate.humidity}%, AQI ${climate.aqi}. Stress level: ${climate.stressLevel.toUpperCase()}.`,
+        msg
+      );
     }
   }
 
