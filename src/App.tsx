@@ -216,6 +216,9 @@ export const App: React.FC = () => {
               aesthetic={agentState.aesthetic}
               avatarUrl={agentState.userImage || selectedPersona?.avatarUrl}
               faceDetection={agentState.faceDetection}
+              onCaptureSnapshot={(photoUrl, faceResult, diagnostics) => {
+                handleCustomScenario(photoUrl, 'Live Motion AR Matched Regimen', 48, diagnostics, faceResult);
+              }}
             />
           </div>
         </div>

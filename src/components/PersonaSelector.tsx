@@ -584,12 +584,19 @@ export const PersonaSelector: React.FC<PersonaSelectorProps> = ({
               </button>
 
               <button
-                onClick={startWebcam}
+                onClick={() => {
+                  const el = document.getElementById('live-ar-studio');
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth' });
+                  } else {
+                    startWebcam();
+                  }
+                }}
                 disabled={isRunning}
                 className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-pink-500/20"
               >
                 <Video className="w-4 h-4" />
-                <span>{customSelfieUrl ? 'Retake Live Selfie' : 'Use Live Camera'}</span>
+                <span>Live Motion AR Mirror</span>
               </button>
 
               {customSelfieUrl && (
